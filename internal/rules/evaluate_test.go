@@ -173,6 +173,43 @@ func TestEvaluateNegativeDayOfMonth(t *testing.T) {
 	}
 }
 
+func TestEvaluateDayOfMonthRangeWrap(t *testing.T) {
+	r := Rule{
+		Name:    "billing-window",
+		Observe: ObserveList{},
+		When: WhenList{
+			{
+				DayOfMonthRanges: []string{"27-5"},
+				Condition:        `account.balance("Checking") < 999999`,
+			},
+		},
+	}
+	// March 2 should match (wrap range 27..end + 1..5)
+	now := time.Date(2024, time.March, 2, 10, 0, 0, 0, time.UTC)
+	data := Data{
+		Accounts: map[string]int64{"Checking": 1},
+		Vars:     map[string]int64{},
+		Now:      now,
+	}
+	trigs, err := Evaluate(context.Background(), []Rule{r}, nil, data)
+	if err != nil {
+		t.Fatalf("evaluate error: %v", err)
+	}
+	if len(trigs) != 1 {
+		t.Fatalf("expected trigger inside range, got %d", len(trigs))
+	}
+
+	// March 10 should not match
+	data.Now = time.Date(2024, time.March, 10, 10, 0, 0, 0, time.UTC)
+	trigs, err = Evaluate(context.Background(), []Rule{r}, nil, data)
+	if err != nil {
+		t.Fatalf("evaluate error: %v", err)
+	}
+	if len(trigs) != 0 {
+		t.Fatalf("expected no trigger outside range, got %d", len(trigs))
+	}
+}
+
 func TestEvaluateCapturesMultipleObservations(t *testing.T) {
 	storePath := t.TempDir() + "/obs.json"
 	store, err := NewStore(storePath)

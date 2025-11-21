@@ -28,12 +28,13 @@ type Observe struct {
 
 // When describes the evaluation condition for a rule.
 type When struct {
-	Window     string   `yaml:"window,omitempty"`       // optional textual window; best-effort
-	DayOfMonth []int    `yaml:"day_of_month,omitempty"` // restrict evaluation to these days (1-31)
-	DaysOfWeek []string `yaml:"days_of_week,omitempty"` // restrict to weekdays (Mon-Sun)
-	NthWeekday string   `yaml:"nth_weekday,omitempty"`  // e.g., "1 Monday", "last Friday"
-	Schedule   string   `yaml:"schedule,omitempty"`     // cron-like "min hour dom mon dow"
-	Condition  string   `yaml:"condition,omitempty"`    // expression returning bool
+	Window           string   `yaml:"window,omitempty"`              // optional textual window; best-effort
+	DayOfMonth       []int    `yaml:"day_of_month,omitempty"`        // restrict evaluation to these days (1-31)
+	DayOfMonthRanges []string `yaml:"day_of_month_range,omitempty"`  // e.g., ["27-5"] to span across months
+	DaysOfWeek       []string `yaml:"days_of_week,omitempty"`        // restrict to weekdays (Mon-Sun)
+	NthWeekday       string   `yaml:"nth_weekday,omitempty"`         // e.g., "1 Monday", "last Friday"
+	Schedule         string   `yaml:"schedule,omitempty"`            // cron-like "min hour dom mon dow"
+	Condition        string   `yaml:"condition,omitempty"`           // expression returning bool
 }
 
 // ObserveList allows single-object or list YAML.

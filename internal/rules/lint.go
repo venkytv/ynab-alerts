@@ -74,6 +74,16 @@ func lintWhen(whens WhenList, vars map[string]struct{}) []string {
 				}
 			}
 		}
+		for _, r := range when.DayOfMonthRanges {
+			s, e, ok := parseRange(r)
+			if !ok {
+				issues = append(issues, fmt.Sprintf("day_of_month_range value %q is invalid", r))
+				continue
+			}
+			if s < 1 || s > 31 || e < 1 || e > 31 {
+				issues = append(issues, fmt.Sprintf("day_of_month_range %q values must be within 1..31", r))
+			}
+		}
 		for _, d := range when.DaysOfWeek {
 			if _, ok := weekdayMap[strings.ToLower(strings.TrimSpace(d))]; !ok {
 				issues = append(issues, fmt.Sprintf("days_of_week value %q is invalid", d))
@@ -89,7 +99,7 @@ func lintWhen(whens WhenList, vars map[string]struct{}) []string {
 			if _, err := cron.ParseStandard(when.Schedule); err != nil {
 				issues = append(issues, fmt.Sprintf("schedule invalid cron: %v", err))
 			}
-			if len(when.DayOfMonth) > 0 || len(when.DaysOfWeek) > 0 || when.NthWeekday != "" {
+			if len(when.DayOfMonth) > 0 || len(when.DaysOfWeek) > 0 || when.NthWeekday != "" || len(when.DayOfMonthRanges) > 0 {
 				issues = append(issues, "schedule present; day/week gates will be ignored")
 			}
 		}
@@ -142,7 +152,7 @@ func nextEval(whens WhenList, now time.Time, pollInterval time.Duration) (time.T
 	// if no explicit gates anywhere: now + poll
 	allUngated := true
 	for _, when := range whens {
-		if len(when.DayOfMonth) > 0 || len(when.DaysOfWeek) > 0 || when.NthWeekday != "" {
+		if len(when.DayOfMonth) > 0 || len(when.DaysOfWeek) > 0 || when.NthWeekday != "" || len(when.DayOfMonthRanges) > 0 {
 			allUngated = false
 			break
 		}
@@ -155,6 +165,7 @@ func nextEval(whens WhenList, now time.Time, pollInterval time.Duration) (time.T
 		t := now.AddDate(0, 0, i)
 		for _, when := range whens {
 			if matchesDayOfMonth(when.DayOfMonth, t.Day(), daysInMonth(t)) &&
+				matchesDayOfMonthRange(when.DayOfMonthRanges, t.Day(), daysInMonth(t)) &&
 				matchesDayOfWeek(when.DaysOfWeek, t.Weekday()) &&
 				matchNth(when.NthWeekday, t) {
 				approx := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, now.Location()).Add(pollInterval)

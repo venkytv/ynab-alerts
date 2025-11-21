@@ -214,6 +214,19 @@ func sameCalendarDay(a, b time.Time) bool {
 	return a.Year() == b.Year() && a.Month() == b.Month() && a.Day() == b.Day()
 }
 
+func parseRange(r string) (start int, end int, ok bool) {
+	parts := strings.Split(r, "-")
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	s, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
+	e, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if err1 != nil || err2 != nil {
+		return 0, 0, false
+	}
+	return s, e, true
+}
+
 func shouldEvaluate(when When, now time.Time, ruleName string) bool {
 	// schedule (cron) wins if set
 	if when.Schedule != "" {
@@ -229,6 +242,10 @@ func shouldEvaluate(when When, now time.Time, ruleName string) bool {
 
 	if len(when.DayOfMonth) > 0 && !matchesDayOfMonth(when.DayOfMonth, now.Day(), daysInMonth(now)) {
 		dbg.Debugf("rule %s day_of_month gate does not match at %s", ruleName, now.Format(time.RFC3339))
+		return false
+	}
+	if len(when.DayOfMonthRanges) > 0 && !matchesDayOfMonthRange(when.DayOfMonthRanges, now.Day(), daysInMonth(now)) {
+		dbg.Debugf("rule %s day_of_month_range gate does not match at %s", ruleName, now.Format(time.RFC3339))
 		return false
 	}
 	if len(when.DaysOfWeek) > 0 && !matchesDayOfWeek(when.DaysOfWeek, now.Weekday()) {
@@ -257,6 +274,29 @@ func matchesDayOfMonth(days []int, today int, lastDay int) bool {
 		if d < 0 {
 			fromEnd := lastDay + d + 1 // d = -1 => lastDay, -2 => lastDay-1
 			if fromEnd == today {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func matchesDayOfMonthRange(ranges []string, today int, lastDay int) bool {
+	if len(ranges) == 0 {
+		return true
+	}
+	for _, r := range ranges {
+		start, end, ok := parseRange(r)
+		if !ok {
+			continue
+		}
+		if start <= end {
+			if today >= start && today <= end {
+				return true
+			}
+		} else {
+			// wrap across months: start..lastDay OR 1..end
+			if today >= start || today <= end {
 				return true
 			}
 		}

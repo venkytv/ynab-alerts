@@ -65,6 +65,15 @@ CLI overrides (persistent flags): `--config`, `--token`, `--budget`, `--base-url
     schedule: "0 9 14 * *" # 09:00 on the 14th monthly (cron standard)
     condition: account.balance("Checking") < account.due("CC_Main")
   notify: [pushover]
+- name: billing_window_readiness
+  observe:
+    - capture_on: "28"
+      variable: bill_due
+      value: 500
+  when:
+    - day_of_month_range: ["27-5"] # spans month boundary
+      condition: account.balance("Checking") < (var.bill_due + 200)
+  notify: [log]
 - name: month_end_check
   when:
     - day_of_month: [-1] # last day of the month
@@ -104,4 +113,4 @@ CLI overrides (persistent flags): `--config`, `--token`, `--budget`, `--base-url
   notify: [pushover]
 ```
 
-Supported primitives: `account.balance("Name")`, `account.due("Name")` (alias of balance), numeric literals in dollars (e.g., `50` or `50.5`), simple math with `*` and `+`, and `var.<name>` for captured values. You can provide multiple `observe` and `when` entries per rule; schedule gates: `day_of_month` (supports negatives, e.g., `-1` = last day), `days_of_week` (Mon-Sun), `nth_weekday` (`1 Monday`, `last Friday`), or `schedule` (cron `min hour dom mon dow`). Observations persist in the cache (`$XDG_CACHE_HOME/ynab-alerts/observations.json` by default, override with `YNAB_OBSERVATIONS_PATH`).
+Supported primitives: `account.balance("Name")`, `account.due("Name")` (alias of balance), numeric literals in dollars (e.g., `50` or `50.5`), simple math with `*` and `+`, and `var.<name>` for captured values. You can provide multiple `observe` and `when` entries per rule; schedule gates: `day_of_month` (supports negatives, e.g., `-1` = last day), `day_of_month_range` (e.g., `27-5` to span months), `days_of_week` (Mon-Sun), `nth_weekday` (`1 Monday`, `last Friday`), or `schedule` (cron `min hour dom mon dow`). Observations persist in the cache (`$XDG_CACHE_HOME/ynab-alerts/observations.json` by default, override with `YNAB_OBSERVATIONS_PATH`).

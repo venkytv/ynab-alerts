@@ -93,3 +93,28 @@ func TestLintReportsNextEvalAndConflicts(t *testing.T) {
 		}
 	}
 }
+
+func TestLintDayOfMonthRangeValidation(t *testing.T) {
+	dir := t.TempDir()
+	content := `
+- name: invalid_range
+  when:
+    - day_of_month_range: ["32-5", "a-b"]
+      condition: account.balance("Checking") < 100
+  notify: [log]
+`
+	if err := os.WriteFile(filepath.Join(dir, "r.yaml"), []byte(content), 0o644); err != nil {
+		t.Fatalf("write error: %v", err)
+	}
+	now := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
+	results, err := LintWithPoll(dir, now, time.Hour)
+	if err != nil {
+		t.Fatalf("lint error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if len(results[0].Issues) < 2 {
+		t.Fatalf("expected range issues, got: %+v", results[0].Issues)
+	}
+}

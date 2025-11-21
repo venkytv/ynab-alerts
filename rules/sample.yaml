@@ -42,6 +42,16 @@
       condition: account.balance("Checking") < 100
   notify: [log]
 
+- name: billing_window_readiness
+  observe:
+    - capture_on: "28" # record bill near end of month
+      variable: bill_due
+      value: 500
+  when:
+    - day_of_month_range: ["27-5"] # span 27th through 5th of next month
+      condition: account.balance("Checking") < (var.bill_due + 200)
+  notify: [log]
+
 - name: two_cards_cover
   observe:
     - capture_on: "10"

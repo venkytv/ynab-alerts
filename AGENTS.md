@@ -63,6 +63,15 @@
       schedule: "0 9 14 * *"
       condition: account.balance("Checking") < account.due("CC_Main")
     notify: pushover
+  - name: billing_window_readiness
+    observe:
+      - capture_on: "28"
+        variable: bill_due
+        value: 500
+    when:
+      - day_of_month_range: ["27-5"] # spans month boundary
+        condition: account.balance("Checking") < (var.bill_due + 200)
+    notify: log
   - name: month_end_check
     when:
       - day_of_month: [-1]
@@ -92,7 +101,7 @@
         condition: account.balance("Checking") < (var.rent_due + 300)
     notify: log
   ```
-- Primitives: `account.balance`, `account.due`, simple math, named variables per day; numeric literals are dollars (e.g., `50` or `50.5`) and converted to milliunits. Multiple `observe` and `when` blocks are supported. Schedule via `day_of_month` (supports negatives, e.g., `-1` for last day), `days_of_week`, `nth_weekday` (e.g., `1 Monday`, `last Friday`), or cron-style `schedule`. Store rules in `rules/`; validate on startup and lint unknown accounts/vars.
+- Primitives: `account.balance`, `account.due`, simple math, named variables per day; numeric literals are dollars (e.g., `50` or `50.5`) and converted to milliunits. Multiple `observe` and `when` blocks are supported. Schedule via `day_of_month` (supports negatives, e.g., `-1` for last day), `day_of_month_range` (e.g., `27-5` to span months), `days_of_week`, `nth_weekday` (e.g., `1 Monday`, `last Friday`), or cron-style `schedule`. Store rules in `rules/`; validate on startup and lint unknown accounts/vars.
 
 ## Security & Configuration Tips
 - Never commit real YNAB API tokens; load them from `.env` or your shell environment.
