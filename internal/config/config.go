@@ -76,10 +76,11 @@ func FromEnv() (Config, error) {
 		cfg.PollInterval = dur
 	}
 
-	return cfg, cfg.validate()
+	return cfg, nil
 }
 
-func (c Config) validate() error {
+// Validate performs consistency checks on the assembled config.
+func (c Config) Validate() error {
 	if c.APIToken == "" {
 		return errors.New("YNAB_TOKEN is required")
 	}

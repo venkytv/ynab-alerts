@@ -35,3 +35,34 @@
     schedule: "0 9 14 * *" # 09:00 on the 14th of every month (cron standard)
     condition: account.balance("Checking") < account.due("CC_Main")
   notify: [pushover]
+
+- name: month_end_check
+  when:
+    - day_of_month: [-1] # last day of the month
+      condition: account.balance("Checking") < 100
+  notify: [log]
+
+- name: two_cards_cover
+  observe:
+    - capture_on: "10"
+      variable: card1_due
+      value: account.due("Card1")
+    - capture_on: "15"
+      variable: card2_due
+      value: account.due("Card2")
+  when:
+    - day_of_month: [-1] # last day
+      condition: account.balance("Checking") < (var.card1_due + var.card2_due + 100)
+  notify: [pushover]
+
+- name: paycheck_buffer
+  observe:
+    - capture_on: "1"
+      variable: rent_due
+      value: 2000
+  when:
+    - days_of_week: ["Fri"]
+      condition: account.balance("Checking") < (var.rent_due * 0.5) # mid-cycle buffer
+    - day_of_month: [25]
+      condition: account.balance("Checking") < (var.rent_due + 300) # rent + cushion before due
+  notify: [log]

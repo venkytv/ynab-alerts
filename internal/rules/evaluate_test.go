@@ -144,3 +144,63 @@ func TestEvaluateScheduleOverridesOtherGates(t *testing.T) {
 		t.Fatalf("expected schedule to match even with conflicting day_of_month, got %d", len(trigs))
 	}
 }
+
+func TestEvaluateNegativeDayOfMonth(t *testing.T) {
+	r := Rule{
+		Name:    "end-of-month",
+		Observe: ObserveList{},
+		When: WhenList{
+			{
+				DayOfMonth: []int{-1},
+				Condition:  `account.balance("Checking") < 200`,
+			},
+		},
+	}
+	now := time.Date(2024, time.January, 31, 12, 0, 0, 0, time.UTC) // last day
+	data := Data{
+		Accounts: map[string]int64{"Checking": 150_000},
+		Vars:     map[string]int64{},
+		Now:      now,
+	}
+	trigs, err := Evaluate(context.Background(), []Rule{r}, nil, data)
+	if err != nil {
+		t.Fatalf("evaluate error: %v", err)
+	}
+	if len(trigs) != 1 {
+		t.Fatalf("expected trigger on last day, got %d", len(trigs))
+	}
+}
+
+func TestEvaluateCapturesMultipleObservations(t *testing.T) {
+	storePath := t.TempDir() + "/obs.json"
+	store, err := NewStore(storePath)
+	if err != nil {
+		t.Fatalf("store error: %v", err)
+	}
+	r := Rule{
+		Name: "multi-observe",
+		Observe: ObserveList{
+			{CaptureOn: "", Variable: "a", Value: "10"},
+			{CaptureOn: "", Variable: "b", Value: "20"},
+		},
+		When: WhenList{
+			{Condition: "var.a < var.b"},
+		},
+	}
+	data := Data{
+		Accounts: map[string]int64{},
+		Vars:     map[string]int64{},
+		Now:      time.Now(),
+	}
+	trigs, err := Evaluate(context.Background(), []Rule{r}, store, data)
+	if err != nil {
+		t.Fatalf("evaluate error: %v", err)
+	}
+	if len(trigs) != 1 {
+		t.Fatalf("expected trigger with captured vars, got %d", len(trigs))
+	}
+	snap := store.Snapshot()
+	if snap["a"] != 10_000 || snap["b"] != 20_000 {
+		t.Fatalf("unexpected captured values (milliunits): %+v", snap)
+	}
+}

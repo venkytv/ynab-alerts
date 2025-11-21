@@ -221,7 +221,7 @@ func shouldEvaluate(when When, now time.Time) bool {
 		return sameMinute(prev, now)
 	}
 
-	if len(when.DayOfMonth) > 0 && !matchesDayOfMonth(when.DayOfMonth, now.Day()) {
+	if len(when.DayOfMonth) > 0 && !matchesDayOfMonth(when.DayOfMonth, now.Day(), daysInMonth(now)) {
 		return false
 	}
 	if len(when.DaysOfWeek) > 0 && !matchesDayOfWeek(when.DaysOfWeek, now.Weekday()) {
@@ -237,13 +237,19 @@ func sameMinute(a, b time.Time) bool {
 	return a.Year() == b.Year() && a.Month() == b.Month() && a.Day() == b.Day() && a.Hour() == b.Hour() && a.Minute() == b.Minute()
 }
 
-func matchesDayOfMonth(days []int, today int) bool {
+func matchesDayOfMonth(days []int, today int, lastDay int) bool {
 	if len(days) == 0 {
 		return true
 	}
 	for _, d := range days {
-		if d == today {
+		if d > 0 && d == today {
 			return true
+		}
+		if d < 0 {
+			fromEnd := lastDay + d + 1 // d = -1 => lastDay, -2 => lastDay-1
+			if fromEnd == today {
+				return true
+			}
 		}
 	}
 	return false
@@ -279,6 +285,10 @@ func matchesDayOfWeek(days []string, today time.Weekday) bool {
 		}
 	}
 	return false
+}
+
+func daysInMonth(t time.Time) int {
+	return time.Date(t.Year(), t.Month()+1, 0, 0, 0, 0, 0, t.Location()).Day()
 }
 
 func matchesNthWeekday(expr string, now time.Time) bool {

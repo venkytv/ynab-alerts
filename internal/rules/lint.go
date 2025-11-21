@@ -69,8 +69,8 @@ func lintWhen(whens WhenList, vars map[string]struct{}) []string {
 		}
 		if len(when.DayOfMonth) > 0 {
 			for _, d := range when.DayOfMonth {
-				if d < 1 || d > 31 {
-					issues = append(issues, fmt.Sprintf("day_of_month value %d is out of range 1-31", d))
+				if d == 0 || d < -31 || d > 31 {
+					issues = append(issues, fmt.Sprintf("day_of_month value %d is out of range -31..-1 or 1..31", d))
 				}
 			}
 		}
@@ -154,7 +154,7 @@ func nextEval(whens WhenList, now time.Time, pollInterval time.Duration) (time.T
 	for i := 0; i <= 365; i++ {
 		t := now.AddDate(0, 0, i)
 		for _, when := range whens {
-			if matchesDayOfMonth(when.DayOfMonth, t.Day()) &&
+			if matchesDayOfMonth(when.DayOfMonth, t.Day(), daysInMonth(t)) &&
 				matchesDayOfWeek(when.DaysOfWeek, t.Weekday()) &&
 				matchNth(when.NthWeekday, t) {
 				approx := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, now.Location()).Add(pollInterval)

@@ -154,6 +154,10 @@ func runDaemon(ctx context.Context, cmd *cobra.Command) error {
 		cfg.PollInterval = dur
 	}
 
+	if err := cfg.Validate(); err != nil {
+		return fmt.Errorf("config error: %w", err)
+	}
+
 	store, err := rules.NewStore(cfg.ObservePath)
 	if err != nil {
 		return fmt.Errorf("observation store error: %w", err)

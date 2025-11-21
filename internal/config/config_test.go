@@ -17,6 +17,9 @@ func TestFromEnvDefaultsAndOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("unexpected validate error: %v", err)
+	}
 	if cfg.APIToken != "t123" || cfg.BudgetID != "b123" {
 		t.Fatalf("token/budget not set from env")
 	}
@@ -58,5 +61,23 @@ func TestObservePathOverride(t *testing.T) {
 	}
 	if cfg.ObservePath != "/tmp/custom/obs.json" {
 		t.Fatalf("observe path override failed: %s", cfg.ObservePath)
+	}
+}
+
+func TestValidateRespectsNotifierKind(t *testing.T) {
+	cfg := Config{
+		APIToken:     "token",
+		BudgetID:     "budget",
+		Notifier:     "log",
+		PollInterval: time.Hour,
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("log notifier should not require pushover creds: %v", err)
+	}
+
+	cfg.Notifier = "pushover"
+	cfg.Pushover = PushoverConfig{}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected error when pushover creds are missing")
 	}
 }

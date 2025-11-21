@@ -61,8 +61,36 @@
       schedule: "0 9 14 * *"
       condition: account.balance("Checking") < account.due("CC_Main")
     notify: pushover
+  - name: month_end_check
+    when:
+      - day_of_month: [-1]
+        condition: account.balance("Checking") < 100
+    notify: log
+  - name: two_cards_cover
+    observe:
+      - capture_on: "10"
+        variable: card1_due
+        value: account.due("Card1")
+      - capture_on: "15"
+        variable: card2_due
+        value: account.due("Card2")
+    when:
+      - day_of_month: [-1]
+        condition: account.balance("Checking") < (var.card1_due + var.card2_due + 100)
+    notify: pushover
+  - name: paycheck_buffer
+    observe:
+      - capture_on: "1"
+        variable: rent_due
+        value: 2000
+    when:
+      - days_of_week: ["Fri"]
+        condition: account.balance("Checking") < (var.rent_due * 0.5)
+      - day_of_month: [25]
+        condition: account.balance("Checking") < (var.rent_due + 300)
+    notify: log
   ```
-- Primitives: `account.balance`, `account.due`, simple math, named variables per day; numeric literals are dollars (e.g., `50` or `50.5`) and converted to milliunits. Multiple `observe` and `when` blocks are supported. Schedule via `day_of_month`, `days_of_week`, `nth_weekday` (e.g., `1 Monday`, `last Friday`), or cron-style `schedule`. Store rules in `rules/`; validate on startup and lint unknown accounts/vars.
+- Primitives: `account.balance`, `account.due`, simple math, named variables per day; numeric literals are dollars (e.g., `50` or `50.5`) and converted to milliunits. Multiple `observe` and `when` blocks are supported. Schedule via `day_of_month` (supports negatives, e.g., `-1` for last day), `days_of_week`, `nth_weekday` (e.g., `1 Monday`, `last Friday`), or cron-style `schedule`. Store rules in `rules/`; validate on startup and lint unknown accounts/vars.
 
 ## Security & Configuration Tips
 - Never commit real YNAB API tokens; load them from `.env` or your shell environment.

@@ -3,6 +3,7 @@ package rules
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -79,5 +80,16 @@ func TestLintReportsNextEvalAndConflicts(t *testing.T) {
 	}
 	if !hasEmpty {
 		t.Fatalf("expected empty condition warning")
+	}
+
+	// ensure negative day_of_month is accepted
+	for _, r := range results {
+		if r.Name == "cron_and_day" {
+			for _, issue := range r.Issues {
+				if strings.Contains(issue, "day_of_month") {
+					t.Fatalf("did not expect day_of_month error for cron_and_day")
+				}
+			}
+		}
 	}
 }
