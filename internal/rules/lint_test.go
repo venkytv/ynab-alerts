@@ -17,6 +17,12 @@ func TestLintReportsNextEvalAndConflicts(t *testing.T) {
     condition: account.balance("Checking") < 10
 - name: empty_condition
   when: {}
+- name: bad_refs
+  observe:
+    variable: captured
+    value: account.due("CC")
+  when:
+    condition: var.missing_var < 10
 `
 	if err := os.WriteFile(filepath.Join(dir, "rules.yaml"), []byte(ruleFile), 0o644); err != nil {
 		t.Fatalf("write tmp rule: %v", err)
@@ -27,8 +33,8 @@ func TestLintReportsNextEvalAndConflicts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("lint error: %v", err)
 	}
-	if len(results) != 2 {
-		t.Fatalf("expected 2 results, got %d", len(results))
+	if len(results) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(results))
 	}
 
 	var cronRes, emptyRes LintResult
@@ -38,6 +44,17 @@ func TestLintReportsNextEvalAndConflicts(t *testing.T) {
 		}
 		if r.Name == "empty_condition" {
 			emptyRes = r
+		}
+		if r.Name == "bad_refs" {
+			found := false
+			for _, issue := range r.Issues {
+				if issue == `condition references unknown variable "missing_var"` {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("expected unknown variable warning for bad_refs")
+			}
 		}
 	}
 

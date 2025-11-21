@@ -24,37 +24,44 @@ func Evaluate(ctx context.Context, rules []Rule, store *Store, data Data) ([]Tri
 		default:
 		}
 
-		if store != nil && rule.Observe != nil {
-			if err := captureObservation(rule.Observe, store, data); err != nil {
+		for _, obs := range rule.Observe {
+			if store == nil {
+				break
+			}
+			if err := captureObservation(obs, store, data); err != nil {
 				return triggers, fmt.Errorf("capture %s: %w", rule.Name, err)
 			}
 			// refresh vars after capture
 			data.Vars = store.Snapshot()
 		}
 
-		if rule.When.Condition == "" {
+		if len(rule.When) == 0 {
 			continue
 		}
 
-		if !shouldEvaluate(rule.When, data.Now) {
-			continue
-		}
-
-		ok, err := evaluateCondition(rule.When.Condition, data)
-		if err != nil {
-			return triggers, fmt.Errorf("rule %s: %w", rule.Name, err)
-		}
-		if ok {
-			triggers = append(triggers, Trigger{
-				Rule:    rule,
-				Message: fmt.Sprintf("Rule %s triggered: %s", rule.Name, rule.When.Condition),
-			})
+		for _, when := range rule.When {
+			if when.Condition == "" {
+				continue
+			}
+			if !shouldEvaluate(when, data.Now) {
+				continue
+			}
+			ok, err := evaluateCondition(when.Condition, data)
+			if err != nil {
+				return triggers, fmt.Errorf("rule %s: %w", rule.Name, err)
+			}
+			if ok {
+				triggers = append(triggers, Trigger{
+					Rule:    rule,
+					Message: fmt.Sprintf("Rule %s triggered: %s", rule.Name, when.Condition),
+				})
+			}
 		}
 	}
 	return triggers, nil
 }
 
-func captureObservation(obs *Observe, store *Store, data Data) error {
+func captureObservation(obs Observe, store *Store, data Data) error {
 	if obs.Variable == "" || obs.Value == "" {
 		return errors.New("observation missing variable or value")
 	}

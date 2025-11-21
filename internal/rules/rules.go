@@ -13,8 +13,8 @@ import (
 // Rule represents a rule definition loaded from YAML.
 type Rule struct {
 	Name    string      `yaml:"name"`
-	Observe *Observe    `yaml:"observe,omitempty"`
-	When    When        `yaml:"when"`
+	Observe ObserveList `yaml:"observe,omitempty"`
+	When    WhenList    `yaml:"when"`
 	Notify  []string    `yaml:"notify"`
 	Meta    interface{} `yaml:"meta,omitempty"`
 }
@@ -28,12 +28,48 @@ type Observe struct {
 
 // When describes the evaluation condition for a rule.
 type When struct {
-	Window      string   `yaml:"window,omitempty"`        // optional textual window; best-effort
-	DayOfMonth  []int    `yaml:"day_of_month,omitempty"`  // restrict evaluation to these days (1-31)
-	DaysOfWeek  []string `yaml:"days_of_week,omitempty"`  // restrict to weekdays (Mon-Sun)
-	NthWeekday  string   `yaml:"nth_weekday,omitempty"`   // e.g., "1 Monday", "last Friday"
-	Schedule    string   `yaml:"schedule,omitempty"`      // cron-like "min hour dom mon dow"
-	Condition   string   `yaml:"condition,omitempty"`     // expression returning bool
+	Window     string   `yaml:"window,omitempty"`       // optional textual window; best-effort
+	DayOfMonth []int    `yaml:"day_of_month,omitempty"` // restrict evaluation to these days (1-31)
+	DaysOfWeek []string `yaml:"days_of_week,omitempty"` // restrict to weekdays (Mon-Sun)
+	NthWeekday string   `yaml:"nth_weekday,omitempty"`  // e.g., "1 Monday", "last Friday"
+	Schedule   string   `yaml:"schedule,omitempty"`     // cron-like "min hour dom mon dow"
+	Condition  string   `yaml:"condition,omitempty"`    // expression returning bool
+}
+
+// ObserveList allows single-object or list YAML.
+type ObserveList []Observe
+
+// UnmarshalYAML custom unmarshals a single observe or a list.
+func (o *ObserveList) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var seq []Observe
+	if err := unmarshal(&seq); err == nil {
+		*o = seq
+		return nil
+	}
+	var single Observe
+	if err := unmarshal(&single); err == nil {
+		*o = []Observe{single}
+		return nil
+	}
+	return fmt.Errorf("observe must be object or list")
+}
+
+// WhenList allows single-object or list YAML.
+type WhenList []When
+
+// UnmarshalYAML custom unmarshals a single when or a list.
+func (w *WhenList) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var seq []When
+	if err := unmarshal(&seq); err == nil {
+		*w = seq
+		return nil
+	}
+	var single When
+	if err := unmarshal(&single); err == nil {
+		*w = []When{single}
+		return nil
+	}
+	return fmt.Errorf("when must be object or list")
 }
 
 // Data is the evaluation context.

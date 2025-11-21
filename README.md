@@ -27,12 +27,12 @@ CLI overrides (persistent flags): `--token`, `--budget`, `--base-url`, `--rules`
   notify: [pushover]
 - name: cc_payment_readiness
   observe:
-    capture_on: "5" # day-of-month to capture CC due
-    variable: cc_due_capture
-    value: account.due("CC_Main")
+    - capture_on: "5" # day-of-month to capture CC due
+      variable: cc_due_capture
+      value: account.due("CC_Main")
   when:
-    day_of_month: [14] # only evaluate on the 14th (weekday agnostic)
-    condition: account.balance("Checking") < 0.8 * var.cc_due_capture
+    - day_of_month: [14] # only evaluate on the 14th (weekday agnostic)
+      condition: account.balance("Checking") < 0.8 * var.cc_due_capture
   notify: [pushover]
 - name: first_monday_buffer
   when:
@@ -49,6 +49,15 @@ CLI overrides (persistent flags): `--token`, `--budget`, `--base-url`, `--rules`
     schedule: "0 9 14 * *" # 09:00 on the 14th monthly (cron standard)
     condition: account.balance("Checking") < account.due("CC_Main")
   notify: [pushover]
+- name: barclaycard_payment_readiness
+  observe:
+    - capture_on: "10"
+      variable: barclaycard_due_capture
+      value: account.due("Barclaycard Avios")
+  when:
+    - day_of_month: [14]
+      condition: account.balance("Barclays") < var.barclaycard_due_capture
+  notify: [pushover]
 ```
 
-Supported primitives: `account.balance("Name")`, `account.due("Name")` (alias of balance), numeric literals in dollars (e.g., `50` or `50.5`), simple math with `*`, and `var.<name>` for captured values. Scheduling gates: `day_of_month`, `days_of_week` (Mon-Sun), `nth_weekday` (`1 Monday`, `last Friday`), or `schedule` (cron `min hour dom mon dow`). Observations persist in the cache (`$XDG_CACHE_HOME/ynab-alerts/observations.json` by default, override with `YNAB_OBSERVATIONS_PATH`).
+Supported primitives: `account.balance("Name")`, `account.due("Name")` (alias of balance), numeric literals in dollars (e.g., `50` or `50.5`), simple math with `*`, and `var.<name>` for captured values. You can provide multiple `observe` and `when` entries per rule; schedule gates: `day_of_month`, `days_of_week` (Mon-Sun), `nth_weekday` (`1 Monday`, `last Friday`), or `schedule` (cron `min hour dom mon dow`). Observations persist in the cache (`$XDG_CACHE_HOME/ynab-alerts/observations.json` by default, override with `YNAB_OBSERVATIONS_PATH`).

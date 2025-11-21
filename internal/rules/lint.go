@@ -2,6 +2,7 @@ package rules
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -30,6 +31,7 @@ func LintWithPoll(dir string, now time.Time, pollInterval time.Duration) ([]Lint
 	nameSeen := map[string]struct{}{}
 	var results []LintResult
 	for _, r := range rules {
+		variables := map[string]struct{}{}
 		res := LintResult{Name: r.Name}
 		if r.Name == "" {
 			res.Issues = append(res.Issues, "rule has no name")
@@ -39,71 +41,128 @@ func LintWithPoll(dir string, now time.Time, pollInterval time.Duration) ([]Lint
 		}
 		nameSeen[r.Name] = struct{}{}
 
-		res.Issues = append(res.Issues, lintWhen(r.When)...)
+		for _, obs := range r.Observe {
+			if obs.Variable == "" {
+				res.Issues = append(res.Issues, "observe variable is empty")
+			} else {
+				variables[obs.Variable] = struct{}{}
+			}
+		}
+
+		res.Issues = append(res.Issues, lintWhen(r.When, variables)...)
 		res.NextEval, res.HasNext = nextEval(r.When, now, pollInterval)
 		results = append(results, res)
 	}
 	return results, nil
 }
 
-func lintWhen(when When) []string {
+func lintWhen(whens WhenList, vars map[string]struct{}) []string {
 	var issues []string
-	if when.Condition == "" {
-		issues = append(issues, "condition is empty; rule will never fire")
-	}
-	if len(when.DayOfMonth) > 0 {
-		for _, d := range when.DayOfMonth {
-			if d < 1 || d > 31 {
-				issues = append(issues, fmt.Sprintf("day_of_month value %d is out of range 1-31", d))
-			}
-		}
-	}
-	for _, d := range when.DaysOfWeek {
-		if _, ok := weekdayMap[strings.ToLower(strings.TrimSpace(d))]; !ok {
-			issues = append(issues, fmt.Sprintf("days_of_week value %q is invalid", d))
-		}
-	}
-	if when.NthWeekday != "" {
-		if _, _, _, ok := parseNthWeekday(when.NthWeekday); !ok {
-			issues = append(issues, fmt.Sprintf("nth_weekday value %q is invalid", when.NthWeekday))
-		}
+
+	if len(whens) == 0 {
+		issues = append(issues, "no when clause defined; rule will never run")
 	}
 
-	if when.Schedule != "" {
-		if _, err := cron.ParseStandard(when.Schedule); err != nil {
-			issues = append(issues, fmt.Sprintf("schedule invalid cron: %v", err))
+	for _, when := range whens {
+		if when.Condition == "" {
+			issues = append(issues, "condition is empty; rule will never fire")
 		}
-		if len(when.DayOfMonth) > 0 || len(when.DaysOfWeek) > 0 || when.NthWeekday != "" {
-			issues = append(issues, "schedule present; day/week gates will be ignored")
+		if len(when.DayOfMonth) > 0 {
+			for _, d := range when.DayOfMonth {
+				if d < 1 || d > 31 {
+					issues = append(issues, fmt.Sprintf("day_of_month value %d is out of range 1-31", d))
+				}
+			}
+		}
+		for _, d := range when.DaysOfWeek {
+			if _, ok := weekdayMap[strings.ToLower(strings.TrimSpace(d))]; !ok {
+				issues = append(issues, fmt.Sprintf("days_of_week value %q is invalid", d))
+			}
+		}
+		if when.NthWeekday != "" {
+			if _, _, _, ok := parseNthWeekday(when.NthWeekday); !ok {
+				issues = append(issues, fmt.Sprintf("nth_weekday value %q is invalid", when.NthWeekday))
+			}
+		}
+
+		if when.Schedule != "" {
+			if _, err := cron.ParseStandard(when.Schedule); err != nil {
+				issues = append(issues, fmt.Sprintf("schedule invalid cron: %v", err))
+			}
+			if len(when.DayOfMonth) > 0 || len(when.DaysOfWeek) > 0 || when.NthWeekday != "" {
+				issues = append(issues, "schedule present; day/week gates will be ignored")
+			}
+		}
+
+		for _, ref := range varRefs(when.Condition) {
+			if _, ok := vars[ref]; !ok {
+				issues = append(issues, fmt.Sprintf("condition references unknown variable %q", ref))
+			}
 		}
 	}
 
 	return issues
 }
 
-func nextEval(when When, now time.Time, pollInterval time.Duration) (time.Time, bool) {
-	if when.Schedule != "" {
-		sched, err := cron.ParseStandard(when.Schedule)
-		if err != nil {
-			return time.Time{}, false
+var varRefPattern = regexp.MustCompile(`var\.([A-Za-z0-9_]+)`)
+
+func varRefs(cond string) []string {
+	matches := varRefPattern.FindAllStringSubmatch(cond, -1)
+	var out []string
+	for _, m := range matches {
+		if len(m) == 2 {
+			out = append(out, m[1])
 		}
-		return sched.Next(now), true
 	}
-	// no explicit gates: next tick is now + poll interval
-	if len(when.DayOfMonth) == 0 && len(when.DaysOfWeek) == 0 && when.NthWeekday == "" {
+	return out
+}
+
+func nextEval(whens WhenList, now time.Time, pollInterval time.Duration) (time.Time, bool) {
+	if len(whens) == 0 {
+		return time.Time{}, false
+	}
+	// schedule wins if present on any when; pick the soonest
+	var best time.Time
+	for _, when := range whens {
+		if when.Schedule != "" {
+			sched, err := cron.ParseStandard(when.Schedule)
+			if err != nil {
+				continue
+			}
+			next := sched.Next(now)
+			if best.IsZero() || next.Before(best) {
+				best = next
+			}
+		}
+	}
+	if !best.IsZero() {
+		return best, true
+	}
+
+	// if no explicit gates anywhere: now + poll
+	allUngated := true
+	for _, when := range whens {
+		if len(when.DayOfMonth) > 0 || len(when.DaysOfWeek) > 0 || when.NthWeekday != "" {
+			allUngated = false
+			break
+		}
+	}
+	if allUngated {
 		return now.Add(pollInterval), true
 	}
-	// search ahead for the first matching day gate.
+
 	for i := 0; i <= 365; i++ {
 		t := now.AddDate(0, 0, i)
-		if matchesDayOfMonth(when.DayOfMonth, t.Day()) &&
-			matchesDayOfWeek(when.DaysOfWeek, t.Weekday()) &&
-			matchNth(when.NthWeekday, t) {
-			approx := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, now.Location()).Add(pollInterval)
-			if approx.Before(now) {
-				approx = now.Add(pollInterval)
+		for _, when := range whens {
+			if matchesDayOfMonth(when.DayOfMonth, t.Day()) &&
+				matchesDayOfWeek(when.DaysOfWeek, t.Weekday()) &&
+				matchNth(when.NthWeekday, t) {
+				approx := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, now.Location()).Add(pollInterval)
+				if approx.Before(now) {
+					approx = now.Add(pollInterval)
+				}
+				return approx, true
 			}
-			return approx, true
 		}
 	}
 	return time.Time{}, false

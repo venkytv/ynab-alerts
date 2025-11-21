@@ -8,8 +8,9 @@ import (
 
 func TestEvaluateDayOfMonthGate(t *testing.T) {
 	r := Rule{
-		Name: "day-gated",
-		When: When{DayOfMonth: []int{14}, Condition: `account.balance("Checking") < 100`},
+		Name:    "day-gated",
+		When:    WhenList{{DayOfMonth: []int{14}, Condition: `account.balance("Checking") < 100`}},
+		Observe: ObserveList{},
 	}
 	data := Data{
 		Accounts: map[string]int64{"Checking": 50_000},
@@ -27,8 +28,9 @@ func TestEvaluateDayOfMonthGate(t *testing.T) {
 
 func TestEvaluateDoesNotTriggerOnOtherDay(t *testing.T) {
 	r := Rule{
-		Name: "day-gated",
-		When: When{DayOfMonth: []int{14}, Condition: `account.balance("Checking") < 100`},
+		Name:    "day-gated",
+		When:    WhenList{{DayOfMonth: []int{14}, Condition: `account.balance("Checking") < 100`}},
+		Observe: ObserveList{},
 	}
 	data := Data{
 		Accounts: map[string]int64{"Checking": 50_000},
@@ -46,8 +48,9 @@ func TestEvaluateDoesNotTriggerOnOtherDay(t *testing.T) {
 
 func TestEvaluateDollarsLiteral(t *testing.T) {
 	r := Rule{
-		Name: "dollars-literal",
-		When: When{Condition: `account.balance("Checking") < 50.5`},
+		Name:    "dollars-literal",
+		When:    WhenList{{Condition: `account.balance("Checking") < 50.5`}},
+		Observe: ObserveList{},
 	}
 	data := Data{
 		Accounts: map[string]int64{"Checking": 50_000}, // $50.00
@@ -65,10 +68,13 @@ func TestEvaluateDollarsLiteral(t *testing.T) {
 
 func TestEvaluateCronSchedule(t *testing.T) {
 	r := Rule{
-		Name: "cron-sched",
-		When: When{
-			Schedule:  "0 9 14 * *", // 09:00 on the 14th
-			Condition: `account.balance("Checking") < 999999`,
+		Name:    "cron-sched",
+		Observe: ObserveList{},
+		When: WhenList{
+			{
+				Schedule:  "0 9 14 * *", // 09:00 on the 14th
+				Condition: `account.balance("Checking") < 999999`,
+			},
 		},
 	}
 	now := time.Date(2024, time.March, 14, 9, 0, 0, 0, time.UTC)
@@ -88,10 +94,13 @@ func TestEvaluateCronSchedule(t *testing.T) {
 
 func TestEvaluateNthWeekday(t *testing.T) {
 	r := Rule{
-		Name: "nth-weekday",
-		When: When{
-			NthWeekday: "1 Monday",
-			Condition:  `account.balance("Checking") < 1000`,
+		Name:    "nth-weekday",
+		Observe: ObserveList{},
+		When: WhenList{
+			{
+				NthWeekday: "1 Monday",
+				Condition:  `account.balance("Checking") < 1000`,
+			},
 		},
 	}
 	now := time.Date(2024, time.July, 1, 10, 0, 0, 0, time.UTC) // Monday and first of month
@@ -111,11 +120,14 @@ func TestEvaluateNthWeekday(t *testing.T) {
 
 func TestEvaluateScheduleOverridesOtherGates(t *testing.T) {
 	r := Rule{
-		Name: "sched-wins",
-		When: When{
-			Schedule:   "0 9 14 * *",
-			DayOfMonth: []int{1},
-			Condition:  `account.balance("Checking") < 1000`,
+		Name:    "sched-wins",
+		Observe: ObserveList{},
+		When: WhenList{
+			{
+				Schedule:   "0 9 14 * *",
+				DayOfMonth: []int{1},
+				Condition:  `account.balance("Checking") < 1000`,
+			},
 		},
 	}
 	now := time.Date(2024, time.March, 14, 9, 0, 0, 0, time.UTC)

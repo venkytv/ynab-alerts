@@ -43,13 +43,13 @@
     notify: slack
   - name: cc_payment_readiness
     observe:
-      capture_on: "5" # day-of-month to record the due amount
-      variable: cc_due_capture
-      value: account.due("CC_Main")
+      - capture_on: "5" # day-of-month to record the due amount
+        variable: cc_due_capture
+        value: account.due("CC_Main")
     when:
-      day_of_month: [14] # weekday agnostic
-      window: payment_day -3d..0d
-      condition: account.balance("Checking") < 0.8 * var.cc_due_capture
+      - day_of_month: [14] # weekday agnostic
+        window: payment_day -3d..0d
+        condition: account.balance("Checking") < 0.8 * var.cc_due_capture
     notify: email
   - name: first_monday_buffer
     when:
@@ -62,7 +62,7 @@
       condition: account.balance("Checking") < account.due("CC_Main")
     notify: pushover
   ```
-- Primitives: `account.balance`, `account.due`, simple math, named variables per day; numeric literals are dollars (e.g., `50` or `50.5`) and converted to milliunits. Schedule via `day_of_month`, `days_of_week`, `nth_weekday` (e.g., `1 Monday`, `last Friday`), or cron-style `schedule`. Store rules in `rules/`; validate on startup and lint unknown accounts/vars.
+- Primitives: `account.balance`, `account.due`, simple math, named variables per day; numeric literals are dollars (e.g., `50` or `50.5`) and converted to milliunits. Multiple `observe` and `when` blocks are supported. Schedule via `day_of_month`, `days_of_week`, `nth_weekday` (e.g., `1 Monday`, `last Friday`), or cron-style `schedule`. Store rules in `rules/`; validate on startup and lint unknown accounts/vars.
 
 ## Security & Configuration Tips
 - Never commit real YNAB API tokens; load them from `.env` or your shell environment.
