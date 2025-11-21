@@ -14,6 +14,8 @@ func TestFromEnvDefaultsAndOverrides(t *testing.T) {
 	t.Setenv("PUSHOVER_APP_TOKEN", "app")
 	t.Setenv("PUSHOVER_USER_KEY", "user")
 	t.Setenv("YNAB_DEBUG", "true")
+	t.Setenv("YNAB_DAY_START", "06:00")
+	t.Setenv("YNAB_DAY_END", "22:00")
 
 	cfg, err := FromEnv()
 	if err != nil {
@@ -34,6 +36,9 @@ func TestFromEnvDefaultsAndOverrides(t *testing.T) {
 	}
 	if !cfg.Debug {
 		t.Fatalf("expected debug to be true from env")
+	}
+	if cfg.DayStart != 6*time.Hour || cfg.DayEnd != 22*time.Hour {
+		t.Fatalf("expected day window 06:00-22:00, got %s-%s", cfg.DayStart, cfg.DayEnd)
 	}
 }
 
@@ -99,6 +104,8 @@ poll_interval: 2m
 notifier: log
 observe_path: /tmp/obs.json
 debug: true
+day_start: "06:00"
+day_end: "21:00"
 pushover:
   app_token: file-app
   user_key: file-user
@@ -129,6 +136,9 @@ pushover:
 	}
 	if cfg.ObservePath != "/tmp/obs.json" {
 		t.Fatalf("observe path not applied: %s", cfg.ObservePath)
+	}
+	if cfg.DayStart != 6*time.Hour || cfg.DayEnd != 21*time.Hour {
+		t.Fatalf("day window not applied from file: %s-%s", cfg.DayStart, cfg.DayEnd)
 	}
 	if cfg.Pushover.AppToken != "file-app" || cfg.Pushover.UserKey != "file-user" || cfg.Pushover.Device != "file-device" {
 		t.Fatalf("pushover block not loaded: %+v", cfg.Pushover)

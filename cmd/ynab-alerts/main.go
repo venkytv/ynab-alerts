@@ -30,6 +30,8 @@ var (
 	flagAccountsBud  string
 	flagDebug        bool
 	flagConfigPath   string
+	flagDayStart     string
+	flagDayEnd       string
 )
 
 func main() {
@@ -53,6 +55,8 @@ func main() {
 	rootCmd.PersistentFlags().StringVar(&flagObservePath, "observe-path", "", "Path to observation store (default XDG cache)")
 	rootCmd.PersistentFlags().BoolVar(&flagDebug, "debug", false, "Enable debug logging")
 	rootCmd.PersistentFlags().StringVar(&flagConfigPath, "config", "", "Path to config file (YAML/JSON)")
+	rootCmd.PersistentFlags().StringVar(&flagDayStart, "day-start", "", "Earliest time of day to evaluate (HH:MM, 24h)")
+	rootCmd.PersistentFlags().StringVar(&flagDayEnd, "day-end", "", "Latest time of day to evaluate (HH:MM, 24h)")
 
 	runCmd := &cobra.Command{
 		Use:   "run",
@@ -171,6 +175,20 @@ func runDaemon(ctx context.Context, cmd *cobra.Command) error {
 	}
 	if cmd.Flags().Changed("debug") {
 		cfg.Debug = flagDebug
+	}
+	if cmd.Flags().Changed("day-start") {
+		dur, err := config.ParseTimeOfDay(flagDayStart)
+		if err != nil {
+			return fmt.Errorf("invalid day-start: %w", err)
+		}
+		cfg.DayStart = dur
+	}
+	if cmd.Flags().Changed("day-end") {
+		dur, err := config.ParseTimeOfDay(flagDayEnd)
+		if err != nil {
+			return fmt.Errorf("invalid day-end: %w", err)
+		}
+		cfg.DayEnd = dur
 	}
 
 	if err := cfg.Validate(); err != nil {

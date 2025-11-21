@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
@@ -57,6 +58,12 @@ func (s *Service) Run(ctx context.Context) error {
 }
 
 func (s *Service) tick(ctx context.Context) error {
+	now := time.Now()
+	if !s.withinEvalWindow(now) {
+		s.debugf("skipping evaluation outside window (%s-%s)", s.windowStr())
+		return nil
+	}
+
 	s.debugf("fetching accounts for budget %s", s.cfg.BudgetID)
 	accounts, err := s.ynab.GetAccounts(ctx, s.cfg.BudgetID)
 	if err != nil {
@@ -74,7 +81,7 @@ func (s *Service) tick(ctx context.Context) error {
 	data := rules.Data{
 		Accounts: accountBalances,
 		Vars:     map[string]int64{},
-		Now:      time.Now(),
+		Now:      now,
 	}
 	if s.ruleStore != nil {
 		data.Vars = s.ruleStore.Snapshot()
@@ -101,4 +108,33 @@ func (s *Service) debugf(format string, args ...interface{}) {
 		return
 	}
 	log.Printf("[debug] "+format, args...)
+}
+
+func (s *Service) withinEvalWindow(now time.Time) bool {
+	// No window configured.
+	if s.cfg.DayStart == 0 && s.cfg.DayEnd == 0 {
+		return true
+	}
+	todayOffset := time.Duration(now.Hour())*time.Hour +
+		time.Duration(now.Minute())*time.Minute +
+		time.Duration(now.Second())*time.Second
+	if s.cfg.DayStart > 0 && todayOffset < s.cfg.DayStart {
+		return false
+	}
+	if s.cfg.DayEnd > 0 && todayOffset >= s.cfg.DayEnd {
+		return false
+	}
+	return true
+}
+
+func (s *Service) windowStr() string {
+	format := func(d time.Duration) string {
+		h := int(d.Hours())
+		m := int(d.Minutes()) % 60
+		return fmt.Sprintf("%02d:%02d", h, m)
+	}
+	if s.cfg.DayStart == 0 && s.cfg.DayEnd == 0 {
+		return "none"
+	}
+	return fmt.Sprintf("%s-%s", format(s.cfg.DayStart), format(s.cfg.DayEnd))
 }

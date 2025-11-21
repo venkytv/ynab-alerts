@@ -12,7 +12,7 @@
 - `go run ./cmd/ynab-alerts run` — execute the daemon; add `--notifier=log` to dry-run alerts.
 - `go run ./cmd/ynab-alerts list-budgets` / `list-accounts --budget <id>` — discovery helpers.
 - `go run ./cmd/ynab-alerts lint` — sanity-check rules; shows issues and next evaluation time.
-- Configuration sources: `--config`/`YNAB_CONFIG` (YAML/JSON file) < env vars < CLI flags. Common flags: `--config`, `--token`, `--budget`, `--base-url`, `--rules`, `--poll`, `--notifier=pushover|log`, `--observe-path`, `--debug` (verbose capture/condition logs).
+- Configuration sources: `--config`/`YNAB_CONFIG` (YAML/JSON file) < env vars < CLI flags. Common flags: `--config`, `--token`, `--budget`, `--base-url`, `--rules`, `--poll`, `--notifier=pushover|log`, `--observe-path`, `--debug` (verbose capture/condition logs), `--day-start`, `--day-end` (HH:MM window).
 
 ## Coding Style & Naming Conventions
 - Follow Go idioms: tabs, `gofmt`, focused files.
@@ -36,6 +36,7 @@
 - Observations persist to XDG cache (`XDG_CACHE_HOME/ynab-alerts/observations.json`); override with `YNAB_OBSERVATIONS_PATH`.
 - Enable debug traces for captures/condition matches with `YNAB_DEBUG=true` or `--debug`.
 - Config files are supported via `--config` or `YNAB_CONFIG` (YAML/JSON); flags > env > file > defaults.
+- Limit daily evaluations with `YNAB_DAY_START`/`YNAB_DAY_END` or CLI equivalents (`06:00`–`22:00` style).
 
 ## Rule Authoring (DSL)
 - Rules must be human-readable; use YAML (example):

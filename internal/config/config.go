@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"fmt"
 	"gopkg.in/yaml.v3"
 )
 
@@ -22,6 +23,8 @@ type Config struct {
 	Pushover     PushoverConfig
 	ObservePath  string
 	Debug        bool
+	DayStart     time.Duration // offset from midnight (optional)
+	DayEnd       time.Duration // offset from midnight (optional)
 }
 
 // PushoverConfig captures credentials for the default notifier.
@@ -83,6 +86,9 @@ func (c Config) Validate() error {
 	if c.PollInterval <= 0 {
 		return errors.New("poll interval must be > 0")
 	}
+	if (c.DayStart > 0 || c.DayEnd > 0) && c.DayStart >= c.DayEnd {
+		return errors.New("day_start must be before day_end")
+	}
 	return nil
 }
 
@@ -122,6 +128,15 @@ func ParseMilliunits(v string) (int64, error) {
 	return int64(f * 1000), nil
 }
 
+// ParseTimeOfDay converts HH:MM (24h) to a duration offset from midnight.
+func ParseTimeOfDay(val string) (time.Duration, error) {
+	t, err := time.Parse("15:04", val)
+	if err != nil {
+		return 0, fmt.Errorf("invalid time of day %q, expected HH:MM", val)
+	}
+	return time.Duration(t.Hour())*time.Hour + time.Duration(t.Minute())*time.Minute, nil
+}
+
 type fileConfig struct {
 	Token        string        `yaml:"token"`
 	BudgetID     string        `yaml:"budget_id"`
@@ -131,6 +146,8 @@ type fileConfig struct {
 	Notifier     string        `yaml:"notifier"`
 	ObservePath  string        `yaml:"observe_path"`
 	Debug        *bool         `yaml:"debug"`
+	DayStart     string        `yaml:"day_start"`
+	DayEnd       string        `yaml:"day_end"`
 	Pushover     pushoverBlock `yaml:"pushover"`
 }
 
@@ -159,6 +176,8 @@ func defaultConfig() Config {
 		Pushover:     PushoverConfig{},
 		ObservePath:  defaultObserve,
 		Debug:        false,
+		DayStart:     0,
+		DayEnd:       0,
 	}
 }
 
@@ -174,6 +193,20 @@ func applyEnv(cfg *Config) error {
 	cfg.Pushover.Device = valueOrDefault(strings.TrimSpace(os.Getenv("PUSHOVER_DEVICE")), cfg.Pushover.Device)
 
 	cfg.Debug = parseBoolEnv(os.Getenv("YNAB_DEBUG"), cfg.Debug)
+	if v := strings.TrimSpace(os.Getenv("YNAB_DAY_START")); v != "" {
+		if dur, err := ParseTimeOfDay(v); err == nil {
+			cfg.DayStart = dur
+		} else {
+			return err
+		}
+	}
+	if v := strings.TrimSpace(os.Getenv("YNAB_DAY_END")); v != "" {
+		if dur, err := ParseTimeOfDay(v); err == nil {
+			cfg.DayEnd = dur
+		} else {
+			return err
+		}
+	}
 
 	if poll := strings.TrimSpace(os.Getenv("YNAB_POLL_INTERVAL")); poll != "" {
 		dur, err := time.ParseDuration(poll)
@@ -222,6 +255,20 @@ func applyFile(cfg *Config, path string) error {
 	}
 	if fc.Debug != nil {
 		cfg.Debug = *fc.Debug
+	}
+	if fc.DayStart != "" {
+		dur, err := ParseTimeOfDay(strings.TrimSpace(fc.DayStart))
+		if err != nil {
+			return err
+		}
+		cfg.DayStart = dur
+	}
+	if fc.DayEnd != "" {
+		dur, err := ParseTimeOfDay(strings.TrimSpace(fc.DayEnd))
+		if err != nil {
+			return err
+		}
+		cfg.DayEnd = dur
 	}
 	if fc.Pushover.AppToken != "" {
 		cfg.Pushover.AppToken = strings.TrimSpace(fc.Pushover.AppToken)
