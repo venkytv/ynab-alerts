@@ -1,0 +1,26 @@
+version: 2
+project_name: ynab-alerts
+
+builds:
+  - id: ynab-alerts
+    main: ./cmd/ynab-alerts
+    binary: ynab-alerts
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+
+archives:
+  - id: default
+    builds: [ynab-alerts]
+    format: tar.gz
+    files:
+      - LICENSE
+      - README.md
+      - rules/sample.yaml
+
+checksum:
+  name_template: "checksums.txt"
+
+release:
+  prerelease: false
