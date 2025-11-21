@@ -81,6 +81,7 @@ func TestValidateRespectsNotifierKind(t *testing.T) {
 		Notifier:     "log",
 		PollInterval: time.Hour,
 		Debug:        true,
+		DayStart:     6 * time.Hour,
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("log notifier should not require pushover creds: %v", err)
@@ -90,6 +91,18 @@ func TestValidateRespectsNotifierKind(t *testing.T) {
 	cfg.Pushover = PushoverConfig{}
 	if err := cfg.Validate(); err == nil {
 		t.Fatalf("expected error when pushover creds are missing")
+	}
+
+	cfg = Config{
+		APIToken:     "token",
+		BudgetID:     "budget",
+		Notifier:     "log",
+		DayStart:     6 * time.Hour,
+		DayEnd:       0, // will default to end of day
+		PollInterval: time.Hour,
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected end-of-day default when only start is set: %v", err)
 	}
 }
 
@@ -115,7 +128,11 @@ pushover:
 		t.Fatalf("write file: %v", err)
 	}
 
+	t.Setenv("YNAB_TOKEN", "")
+	t.Setenv("YNAB_BUDGET_ID", "")
 	t.Setenv("YNAB_POLL_INTERVAL", "45s") // env wins
+	t.Setenv("PUSHOVER_APP_TOKEN", "")
+	t.Setenv("PUSHOVER_USER_KEY", "")
 
 	cfg, err := Load(file)
 	if err != nil {

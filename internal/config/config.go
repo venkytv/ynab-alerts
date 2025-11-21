@@ -86,6 +86,9 @@ func (c Config) Validate() error {
 	if c.PollInterval <= 0 {
 		return errors.New("poll interval must be > 0")
 	}
+	if c.DayStart > 0 && c.DayEnd == 0 {
+		c.DayEnd = 24*time.Hour - time.Second // assume end-of-day if only start provided
+	}
 	if (c.DayStart > 0 || c.DayEnd > 0) && c.DayStart >= c.DayEnd {
 		return errors.New("day_start must be before day_end")
 	}
