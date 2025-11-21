@@ -105,12 +105,8 @@ func main() {
 		Use:   "lint",
 		Short: "Lint rule files for common issues",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadBaseConfig(cmd)
-			if err != nil {
-				return err
-			}
-			rulesDir := resolveRulesDir(cmd, cfg)
-			pollInterval := resolvePollIntervalForLint(cfg)
+			rulesDir := resolveRulesDirForLint(cmd)
+			pollInterval := resolvePollIntervalForLint(nil)
 			now := time.Now()
 			results, err := rules.LintWithPoll(rulesDir, now, pollInterval)
 			if err != nil {
@@ -253,7 +249,20 @@ func resolveRulesDir(cmd *cobra.Command, cfg config.Config) string {
 	return "rules"
 }
 
-func resolvePollIntervalForLint(cfg config.Config) time.Duration {
+func resolveRulesDirForLint(cmd *cobra.Command) string {
+	if cmd != nil && cmd.Flags().Changed("rules") {
+		return strings.TrimSpace(flagRulesDir)
+	}
+	if strings.TrimSpace(flagRulesDir) != "" {
+		return strings.TrimSpace(flagRulesDir)
+	}
+	if v := strings.TrimSpace(os.Getenv("YNAB_RULES_DIR")); v != "" {
+		return v
+	}
+	return "rules"
+}
+
+func resolvePollIntervalForLint(cfg *config.Config) time.Duration {
 	if strings.TrimSpace(flagPollInterval) != "" {
 		if dur, err := time.ParseDuration(flagPollInterval); err == nil {
 			return dur
@@ -264,7 +273,7 @@ func resolvePollIntervalForLint(cfg config.Config) time.Duration {
 			return dur
 		}
 	}
-	if cfg.PollInterval > 0 {
+	if cfg != nil && cfg.PollInterval > 0 {
 		return cfg.PollInterval
 	}
 	return config.DefaultPollInterval()
