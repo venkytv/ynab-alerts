@@ -29,6 +29,7 @@ var (
 	flagObservePath  string
 	flagAccountsBud  string
 	flagDebug        bool
+	flagConfigPath   string
 )
 
 func main() {
@@ -51,6 +52,7 @@ func main() {
 	rootCmd.PersistentFlags().StringVar(&flagPollInterval, "poll", "", "Poll interval (e.g. 1m)")
 	rootCmd.PersistentFlags().StringVar(&flagObservePath, "observe-path", "", "Path to observation store (default XDG cache)")
 	rootCmd.PersistentFlags().BoolVar(&flagDebug, "debug", false, "Enable debug logging")
+	rootCmd.PersistentFlags().StringVar(&flagConfigPath, "config", "", "Path to config file (YAML/JSON)")
 
 	runCmd := &cobra.Command{
 		Use:   "run",
@@ -64,8 +66,12 @@ func main() {
 		Use:   "list-budgets",
 		Short: "List budgets",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			token := resolveToken()
-			baseURL := resolveBaseURL()
+			cfg, err := loadBaseConfig(cmd)
+			if err != nil {
+				return err
+			}
+			token := resolveToken(cfg)
+			baseURL := resolveBaseURL(cfg)
 			client := ynab.NewClient(token, baseURL)
 			return listBudgets(cmd.Context(), client)
 		},
@@ -75,9 +81,13 @@ func main() {
 		Use:   "list-accounts",
 		Short: "List accounts for a budget",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			token := resolveToken()
-			baseURL := resolveBaseURL()
-			budget := resolveBudget(flagAccountsBud)
+			cfg, err := loadBaseConfig(cmd)
+			if err != nil {
+				return err
+			}
+			token := resolveToken(cfg)
+			baseURL := resolveBaseURL(cfg)
+			budget := resolveBudget(cfg, flagAccountsBud)
 			if budget == "" {
 				return fmt.Errorf("budget ID required via --budget or YNAB_BUDGET_ID")
 			}
@@ -91,8 +101,12 @@ func main() {
 		Use:   "lint",
 		Short: "Lint rule files for common issues",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			rulesDir := resolveRulesDir(cmd)
-			pollInterval := resolvePollIntervalForLint()
+			cfg, err := loadBaseConfig(cmd)
+			if err != nil {
+				return err
+			}
+			rulesDir := resolveRulesDir(cmd, cfg)
+			pollInterval := resolvePollIntervalForLint(cfg)
 			now := time.Now()
 			results, err := rules.LintWithPoll(rulesDir, now, pollInterval)
 			if err != nil {
@@ -125,7 +139,7 @@ func main() {
 }
 
 func runDaemon(ctx context.Context, cmd *cobra.Command) error {
-	cfg, err := config.FromEnv()
+	cfg, err := config.Load(resolveConfigPath(cmd))
 	if err != nil {
 		return fmt.Errorf("config error: %w", err)
 	}
@@ -195,54 +209,33 @@ func runDaemon(ctx context.Context, cmd *cobra.Command) error {
 	return nil
 }
 
-func resolveToken() string {
-	if strings.TrimSpace(flagToken) != "" {
-		return strings.TrimSpace(flagToken)
-	}
-	if v := strings.TrimSpace(os.Getenv("YNAB_TOKEN")); v != "" {
-		return v
-	}
-	log.Fatalf("YNAB_TOKEN is required")
-	return ""
-}
-
-func resolveBaseURL() string {
-	if strings.TrimSpace(flagBaseURL) != "" {
-		return strings.TrimSpace(flagBaseURL)
-	}
-	if v := strings.TrimSpace(os.Getenv("YNAB_BASE_URL")); v != "" {
-		return v
-	}
-	return "https://api.ynab.com/v1"
-}
-
-func resolveBudget(override string) string {
+func resolveBudget(cfg config.Config, override string) string {
 	if strings.TrimSpace(override) != "" {
 		return strings.TrimSpace(override)
 	}
 	if strings.TrimSpace(flagBudget) != "" {
 		return strings.TrimSpace(flagBudget)
 	}
-	if v := strings.TrimSpace(os.Getenv("YNAB_BUDGET_ID")); v != "" {
-		return v
+	if cfg.BudgetID != "" {
+		return cfg.BudgetID
 	}
 	return ""
 }
 
-func resolveRulesDir(cmd *cobra.Command) string {
+func resolveRulesDir(cmd *cobra.Command, cfg config.Config) string {
 	if cmd != nil && cmd.Flags().Changed("rules") {
 		return strings.TrimSpace(flagRulesDir)
 	}
 	if strings.TrimSpace(flagRulesDir) != "" {
 		return strings.TrimSpace(flagRulesDir)
 	}
-	if v := strings.TrimSpace(os.Getenv("YNAB_RULES_DIR")); v != "" {
-		return v
+	if cfg.RulesDir != "" {
+		return cfg.RulesDir
 	}
 	return "rules"
 }
 
-func resolvePollIntervalForLint() time.Duration {
+func resolvePollIntervalForLint(cfg config.Config) time.Duration {
 	if strings.TrimSpace(flagPollInterval) != "" {
 		if dur, err := time.ParseDuration(flagPollInterval); err == nil {
 			return dur
@@ -253,7 +246,52 @@ func resolvePollIntervalForLint() time.Duration {
 			return dur
 		}
 	}
+	if cfg.PollInterval > 0 {
+		return cfg.PollInterval
+	}
 	return config.DefaultPollInterval()
+}
+
+func resolveConfigPath(cmd *cobra.Command) string {
+	if cmd != nil && cmd.Flags().Changed("config") {
+		return strings.TrimSpace(flagConfigPath)
+	}
+	if strings.TrimSpace(flagConfigPath) != "" {
+		return strings.TrimSpace(flagConfigPath)
+	}
+	if v := strings.TrimSpace(os.Getenv("YNAB_CONFIG")); v != "" {
+		return v
+	}
+	return ""
+}
+
+func loadBaseConfig(cmd *cobra.Command) (config.Config, error) {
+	cfg, err := config.Load(resolveConfigPath(cmd))
+	if err != nil {
+		return cfg, fmt.Errorf("config error: %w", err)
+	}
+	return cfg, nil
+}
+
+func resolveToken(cfg config.Config) string {
+	if strings.TrimSpace(flagToken) != "" {
+		return strings.TrimSpace(flagToken)
+	}
+	if cfg.APIToken != "" {
+		return cfg.APIToken
+	}
+	log.Fatalf("YNAB_TOKEN is required")
+	return ""
+}
+
+func resolveBaseURL(cfg config.Config) string {
+	if strings.TrimSpace(flagBaseURL) != "" {
+		return strings.TrimSpace(flagBaseURL)
+	}
+	if cfg.BaseURL != "" {
+		return cfg.BaseURL
+	}
+	return "https://api.ynab.com/v1"
 }
 
 func listBudgets(ctx context.Context, client *ynab.Client) error {

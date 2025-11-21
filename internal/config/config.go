@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Config holds runtime settings for the daemon.
@@ -42,40 +44,24 @@ func DefaultPollInterval() time.Duration {
 }
 
 // FromEnv builds a Config from environment variables.
+// Deprecated: prefer Load with a config file path if available.
 func FromEnv() (Config, error) {
-	cacheDir := os.Getenv("XDG_CACHE_HOME")
-	if cacheDir == "" {
-		if home, err := os.UserHomeDir(); err == nil {
-			cacheDir = filepath.Join(home, ".cache")
-		}
-	}
-	defaultObserve := filepath.Join(cacheDir, "ynab-alerts", "observations.json")
+	return Load("")
+}
 
-	cfg := Config{
-		APIToken: strings.TrimSpace(os.Getenv("YNAB_TOKEN")),
-		BudgetID: strings.TrimSpace(os.Getenv("YNAB_BUDGET_ID")),
-		BaseURL:  valueOrDefault(strings.TrimSpace(os.Getenv("YNAB_BASE_URL")), defaultBaseURL),
-		RulesDir: valueOrDefault(strings.TrimSpace(os.Getenv("YNAB_RULES_DIR")), defaultRulesDir),
-		Notifier: valueOrDefault(strings.TrimSpace(os.Getenv("YNAB_NOTIFIER")), defaultNotifier),
-		ObservePath: valueOrDefault(
-			strings.TrimSpace(os.Getenv("YNAB_OBSERVATIONS_PATH")),
-			defaultObserve,
-		),
-		Pushover: PushoverConfig{
-			AppToken: strings.TrimSpace(os.Getenv("PUSHOVER_APP_TOKEN")),
-			UserKey:  strings.TrimSpace(os.Getenv("PUSHOVER_USER_KEY")),
-			Device:   strings.TrimSpace(os.Getenv("PUSHOVER_DEVICE")),
-		},
-		PollInterval: defaultPollInterval,
-		Debug:        parseBool(os.Getenv("YNAB_DEBUG")),
-	}
+// Load builds a Config from an optional YAML/JSON file and environment variables.
+// CLI flags may further override the returned config.
+func Load(filePath string) (Config, error) {
+	cfg := defaultConfig()
 
-	if poll := strings.TrimSpace(os.Getenv("YNAB_POLL_INTERVAL")); poll != "" {
-		dur, err := time.ParseDuration(poll)
-		if err != nil {
+	if filePath != "" {
+		if err := applyFile(&cfg, filePath); err != nil {
 			return cfg, err
 		}
-		cfg.PollInterval = dur
+	}
+
+	if err := applyEnv(&cfg); err != nil {
+		return cfg, err
 	}
 
 	return cfg, nil
@@ -116,6 +102,13 @@ func parseBool(v string) bool {
 	}
 }
 
+func parseBoolEnv(raw string, current bool) bool {
+	if strings.TrimSpace(raw) == "" {
+		return current
+	}
+	return parseBool(raw)
+}
+
 // ParseMilliunits converts a string dollars amount to milliunits if given.
 // This is a helper for reading numeric env values expressed in dollars.
 func ParseMilliunits(v string) (int64, error) {
@@ -127,4 +120,117 @@ func ParseMilliunits(v string) (int64, error) {
 		return 0, err
 	}
 	return int64(f * 1000), nil
+}
+
+type fileConfig struct {
+	Token        string        `yaml:"token"`
+	BudgetID     string        `yaml:"budget_id"`
+	BaseURL      string        `yaml:"base_url"`
+	RulesDir     string        `yaml:"rules_dir"`
+	PollInterval string        `yaml:"poll_interval"`
+	Notifier     string        `yaml:"notifier"`
+	ObservePath  string        `yaml:"observe_path"`
+	Debug        *bool         `yaml:"debug"`
+	Pushover     pushoverBlock `yaml:"pushover"`
+}
+
+type pushoverBlock struct {
+	AppToken string `yaml:"app_token"`
+	UserKey  string `yaml:"user_key"`
+	Device   string `yaml:"device"`
+}
+
+func defaultConfig() Config {
+	cacheDir := os.Getenv("XDG_CACHE_HOME")
+	if cacheDir == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			cacheDir = filepath.Join(home, ".cache")
+		}
+	}
+	defaultObserve := filepath.Join(cacheDir, "ynab-alerts", "observations.json")
+
+	return Config{
+		APIToken:     "",
+		BudgetID:     "",
+		BaseURL:      defaultBaseURL,
+		RulesDir:     defaultRulesDir,
+		PollInterval: defaultPollInterval,
+		Notifier:     defaultNotifier,
+		Pushover:     PushoverConfig{},
+		ObservePath:  defaultObserve,
+		Debug:        false,
+	}
+}
+
+func applyEnv(cfg *Config) error {
+	cfg.APIToken = valueOrDefault(strings.TrimSpace(os.Getenv("YNAB_TOKEN")), cfg.APIToken)
+	cfg.BudgetID = valueOrDefault(strings.TrimSpace(os.Getenv("YNAB_BUDGET_ID")), cfg.BudgetID)
+	cfg.BaseURL = valueOrDefault(strings.TrimSpace(os.Getenv("YNAB_BASE_URL")), cfg.BaseURL)
+	cfg.RulesDir = valueOrDefault(strings.TrimSpace(os.Getenv("YNAB_RULES_DIR")), cfg.RulesDir)
+	cfg.Notifier = valueOrDefault(strings.TrimSpace(os.Getenv("YNAB_NOTIFIER")), cfg.Notifier)
+	cfg.ObservePath = valueOrDefault(strings.TrimSpace(os.Getenv("YNAB_OBSERVATIONS_PATH")), cfg.ObservePath)
+	cfg.Pushover.AppToken = valueOrDefault(strings.TrimSpace(os.Getenv("PUSHOVER_APP_TOKEN")), cfg.Pushover.AppToken)
+	cfg.Pushover.UserKey = valueOrDefault(strings.TrimSpace(os.Getenv("PUSHOVER_USER_KEY")), cfg.Pushover.UserKey)
+	cfg.Pushover.Device = valueOrDefault(strings.TrimSpace(os.Getenv("PUSHOVER_DEVICE")), cfg.Pushover.Device)
+
+	cfg.Debug = parseBoolEnv(os.Getenv("YNAB_DEBUG"), cfg.Debug)
+
+	if poll := strings.TrimSpace(os.Getenv("YNAB_POLL_INTERVAL")); poll != "" {
+		dur, err := time.ParseDuration(poll)
+		if err != nil {
+			return err
+		}
+		cfg.PollInterval = dur
+	}
+	return nil
+}
+
+func applyFile(cfg *Config, path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	var fc fileConfig
+	if err := yaml.Unmarshal(data, &fc); err != nil {
+		return err
+	}
+
+	if fc.Token != "" {
+		cfg.APIToken = strings.TrimSpace(fc.Token)
+	}
+	if fc.BudgetID != "" {
+		cfg.BudgetID = strings.TrimSpace(fc.BudgetID)
+	}
+	if fc.BaseURL != "" {
+		cfg.BaseURL = strings.TrimSpace(fc.BaseURL)
+	}
+	if fc.RulesDir != "" {
+		cfg.RulesDir = strings.TrimSpace(fc.RulesDir)
+	}
+	if fc.Notifier != "" {
+		cfg.Notifier = strings.TrimSpace(fc.Notifier)
+	}
+	if fc.ObservePath != "" {
+		cfg.ObservePath = strings.TrimSpace(fc.ObservePath)
+	}
+	if fc.PollInterval != "" {
+		dur, err := time.ParseDuration(strings.TrimSpace(fc.PollInterval))
+		if err != nil {
+			return err
+		}
+		cfg.PollInterval = dur
+	}
+	if fc.Debug != nil {
+		cfg.Debug = *fc.Debug
+	}
+	if fc.Pushover.AppToken != "" {
+		cfg.Pushover.AppToken = strings.TrimSpace(fc.Pushover.AppToken)
+	}
+	if fc.Pushover.UserKey != "" {
+		cfg.Pushover.UserKey = strings.TrimSpace(fc.Pushover.UserKey)
+	}
+	if fc.Pushover.Device != "" {
+		cfg.Pushover.Device = strings.TrimSpace(fc.Pushover.Device)
+	}
+	return nil
 }
