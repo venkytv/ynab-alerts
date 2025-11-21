@@ -1,0 +1,37 @@
+- name: checking_below_threshold
+  when:
+    condition: account.balance("Checking") < 50 # dollars; converted to milliunits
+  notify: [pushover]
+
+- name: checking_vs_card_due
+  when:
+    condition: account.balance("Checking") < account.due("CC_Main")
+  notify: [pushover]
+
+- name: cc_payment_readiness
+  observe:
+    capture_on: "5" # capture once per month on the 5th, adjust to billing day
+    variable: cc_due_capture
+    value: account.due("CC_Main")
+  when:
+    day_of_month: [14] # evaluate on the 14th, regardless of weekday
+    condition: account.balance("Checking") < 0.8 * var.cc_due_capture
+  notify: [pushover]
+
+- name: first_monday_buffer
+  when:
+    nth_weekday: "1 Monday" # first Monday of the month
+    condition: account.balance("Checking") < 100 # dollars
+  notify: [log]
+
+- name: weekly_friday_sweep
+  when:
+    days_of_week: ["Fri"]
+    condition: account.balance("Savings") > 500 # dollars
+  notify: [log]
+
+- name: cron_based_check
+  when:
+    schedule: "0 9 14 * *" # 09:00 on the 14th of every month (cron standard)
+    condition: account.balance("Checking") < account.due("CC_Main")
+  notify: [pushover]
