@@ -43,12 +43,17 @@ func (s *Store) load() error {
 			if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
 				return err
 			}
+			dbg.Debugf("observation store missing, initializing at %s", s.path)
 			return nil
 		}
 		return err
 	}
 
-	return json.Unmarshal(data, &s.values)
+	if err := json.Unmarshal(data, &s.values); err != nil {
+		return err
+	}
+	dbg.Debugf("loaded %d observation(s) from %s", len(s.values), s.path)
+	return nil
 }
 
 // Snapshot returns a copy of stored variables.
@@ -81,5 +86,9 @@ func (s *Store) Set(name string, val ObservedValue) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.path, data, 0o644)
+	if err := os.WriteFile(s.path, data, 0o644); err != nil {
+		return err
+	}
+	dbg.Debugf("persisted observation %s to %s", name, s.path)
+	return nil
 }

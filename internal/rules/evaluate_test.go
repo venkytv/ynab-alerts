@@ -2,6 +2,8 @@ package rules
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -203,4 +205,67 @@ func TestEvaluateCapturesMultipleObservations(t *testing.T) {
 	if snap["a"] != 10_000 || snap["b"] != 20_000 {
 		t.Fatalf("unexpected captured values (milliunits): %+v", snap)
 	}
+}
+
+func TestEvaluateEmitsDebugLogs(t *testing.T) {
+	storePath := t.TempDir() + "/obs.json"
+	store, err := NewStore(storePath)
+	if err != nil {
+		t.Fatalf("store error: %v", err)
+	}
+
+	logger := &capturingDebug{}
+	defer SetDebugLogger(nil)
+	SetDebugLogger(logger)
+
+	r := Rule{
+		Name: "debug-capture",
+		Observe: ObserveList{
+			{Variable: "due_cc", Value: "account.balance(\"Card\")"},
+		},
+		When: WhenList{
+			{Condition: "var.due_cc > 0"},
+		},
+	}
+	data := Data{
+		Accounts: map[string]int64{"Card": 123_000},
+		Vars:     map[string]int64{},
+		Now:      time.Now(),
+	}
+	if _, err := Evaluate(context.Background(), []Rule{r}, store, data); err != nil {
+		t.Fatalf("evaluate error: %v", err)
+	}
+	if len(logger.msgs) == 0 {
+		t.Fatalf("expected debug logs to be recorded")
+	}
+	foundCapture := false
+	foundMatch := false
+	for _, m := range logger.msgs {
+		if containsAll(m, []string{"captured", "due_cc"}) {
+			foundCapture = true
+		}
+		if containsAll(m, []string{"condition matched", "debug-capture"}) {
+			foundMatch = true
+		}
+	}
+	if !foundCapture || !foundMatch {
+		t.Fatalf("expected capture and match debug logs, got: %v", logger.msgs)
+	}
+}
+
+type capturingDebug struct {
+	msgs []string
+}
+
+func (c *capturingDebug) Debugf(format string, args ...interface{}) {
+	c.msgs = append(c.msgs, fmt.Sprintf(format, args...))
+}
+
+func containsAll(s string, parts []string) bool {
+	for _, p := range parts {
+		if !strings.Contains(s, p) {
+			return false
+		}
+	}
+	return true
 }

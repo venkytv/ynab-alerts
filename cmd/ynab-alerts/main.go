@@ -28,6 +28,7 @@ var (
 	flagPollInterval string
 	flagObservePath  string
 	flagAccountsBud  string
+	flagDebug        bool
 )
 
 func main() {
@@ -49,6 +50,7 @@ func main() {
 	rootCmd.PersistentFlags().StringVar(&flagNotifier, "notifier", "", "Notifier kind (pushover|log)")
 	rootCmd.PersistentFlags().StringVar(&flagPollInterval, "poll", "", "Poll interval (e.g. 1m)")
 	rootCmd.PersistentFlags().StringVar(&flagObservePath, "observe-path", "", "Path to observation store (default XDG cache)")
+	rootCmd.PersistentFlags().BoolVar(&flagDebug, "debug", false, "Enable debug logging")
 
 	runCmd := &cobra.Command{
 		Use:   "run",
@@ -153,6 +155,9 @@ func runDaemon(ctx context.Context, cmd *cobra.Command) error {
 		}
 		cfg.PollInterval = dur
 	}
+	if cmd.Flags().Changed("debug") {
+		cfg.Debug = flagDebug
+	}
 
 	if err := cfg.Validate(); err != nil {
 		return fmt.Errorf("config error: %w", err)
@@ -176,6 +181,11 @@ func runDaemon(ctx context.Context, cmd *cobra.Command) error {
 	}
 
 	ynabClient := ynab.NewClient(cfg.APIToken, cfg.BaseURL)
+	if cfg.Debug {
+		rules.SetDebugLogger(rules.LogDebugLogger{})
+	} else {
+		rules.SetDebugLogger(nil)
+	}
 	svc := service.New(cfg, ynabClient, notif, store)
 
 	log.Println("ynab-alerts daemon starting")

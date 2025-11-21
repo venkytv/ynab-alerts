@@ -9,6 +9,7 @@ Daemon that polls YNAB and emits alerts when rule conditions are met.
    - `YNAB_POLL_INTERVAL` — optional, defaults to `1h` (e.g. `30m`).
    - `YNAB_RULES_DIR` — optional, defaults to `rules/`.
    - `YNAB_OBSERVATIONS_PATH` — optional, defaults to `$XDG_CACHE_HOME/ynab-alerts/observations.json`.
+   - `YNAB_DEBUG` — optional, set to `true` to emit debug logs (captures, matches).
    - `PUSHOVER_APP_TOKEN`, `PUSHOVER_USER_KEY`, `PUSHOVER_DEVICE` — Pushover credentials (default notifier).
 2. Inspect data to write rules:
    - List budgets: `go run ./cmd/ynab-alerts list-budgets`
@@ -17,7 +18,7 @@ Daemon that polls YNAB and emits alerts when rule conditions are met.
 4. Define rules in YAML (see `rules/sample.yaml`).
 5. Run: `go run ./cmd/ynab-alerts run` (add `--notifier=log` to debug without sending).
 
-CLI overrides (persistent flags): `--token`, `--budget`, `--base-url`, `--rules`, `--poll`, `--notifier=pushover|log`, `--observe-path`. Subcommands: `run`, `list-budgets`, `list-accounts`, `lint`.
+CLI overrides (persistent flags): `--token`, `--budget`, `--base-url`, `--rules`, `--poll`, `--notifier=pushover|log`, `--observe-path`, `--debug`. Subcommands: `run`, `list-budgets`, `list-accounts`, `lint`. Enable verbose capture/condition logs with `--debug` or `YNAB_DEBUG=true`.
 
 ## Rule DSL (brief)
 ```yaml

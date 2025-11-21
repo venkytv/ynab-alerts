@@ -12,7 +12,7 @@
 - `go run ./cmd/ynab-alerts run` — execute the daemon; add `--notifier=log` to dry-run alerts.
 - `go run ./cmd/ynab-alerts list-budgets` / `list-accounts --budget <id>` — discovery helpers.
 - `go run ./cmd/ynab-alerts lint` — sanity-check rules; shows issues and next evaluation time.
-- CLI flags override env: `--token`, `--budget`, `--base-url`, `--rules`, `--poll`, `--notifier=pushover|log`, `--observe-path`.
+- CLI flags override env: `--token`, `--budget`, `--base-url`, `--rules`, `--poll`, `--notifier=pushover|log`, `--observe-path`, `--debug` (verbose capture/condition logs).
 
 ## Coding Style & Naming Conventions
 - Follow Go idioms: tabs, `gofmt`, focused files.
@@ -34,6 +34,7 @@
 - API access stays behind interfaces; scheduling and dispatch are centralized so alert logic stays pure; log with rule IDs and guard double-processing with windows or cursors.
 - Notifications default to Pushover; keep notifier drivers pluggable/configurable (e.g., Pushover, Slack, email).
 - Observations persist to XDG cache (`XDG_CACHE_HOME/ynab-alerts/observations.json`); override with `YNAB_OBSERVATIONS_PATH`.
+- Enable debug traces for captures/condition matches with `YNAB_DEBUG=true` or `--debug`.
 
 ## Rule Authoring (DSL)
 - Rules must be human-readable; use YAML (example):

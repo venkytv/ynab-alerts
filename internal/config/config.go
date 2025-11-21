@@ -19,6 +19,7 @@ type Config struct {
 	Notifier     string
 	Pushover     PushoverConfig
 	ObservePath  string
+	Debug        bool
 }
 
 // PushoverConfig captures credentials for the default notifier.
@@ -66,6 +67,7 @@ func FromEnv() (Config, error) {
 			Device:   strings.TrimSpace(os.Getenv("PUSHOVER_DEVICE")),
 		},
 		PollInterval: defaultPollInterval,
+		Debug:        parseBool(os.Getenv("YNAB_DEBUG")),
 	}
 
 	if poll := strings.TrimSpace(os.Getenv("YNAB_POLL_INTERVAL")); poll != "" {
@@ -103,6 +105,15 @@ func valueOrDefault(val, def string) string {
 		return def
 	}
 	return val
+}
+
+func parseBool(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 // ParseMilliunits converts a string dollars amount to milliunits if given.

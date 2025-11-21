@@ -12,6 +12,7 @@ func TestFromEnvDefaultsAndOverrides(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", "/tmp/testcache")
 	t.Setenv("PUSHOVER_APP_TOKEN", "app")
 	t.Setenv("PUSHOVER_USER_KEY", "user")
+	t.Setenv("YNAB_DEBUG", "true")
 
 	cfg, err := FromEnv()
 	if err != nil {
@@ -29,6 +30,9 @@ func TestFromEnvDefaultsAndOverrides(t *testing.T) {
 	}
 	if cfg.PollInterval != time.Hour {
 		t.Fatalf("expected default poll interval 1h, got %s", cfg.PollInterval)
+	}
+	if !cfg.Debug {
+		t.Fatalf("expected debug to be true from env")
 	}
 }
 
@@ -70,6 +74,7 @@ func TestValidateRespectsNotifierKind(t *testing.T) {
 		BudgetID:     "budget",
 		Notifier:     "log",
 		PollInterval: time.Hour,
+		Debug:        true,
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("log notifier should not require pushover creds: %v", err)

@@ -43,7 +43,7 @@ func Evaluate(ctx context.Context, rules []Rule, store *Store, data Data) ([]Tri
 			if when.Condition == "" {
 				continue
 			}
-			if !shouldEvaluate(when, data.Now) {
+			if !shouldEvaluate(when, data.Now, rule.Name) {
 				continue
 			}
 			ok, err := evaluateCondition(when.Condition, data)
@@ -51,6 +51,7 @@ func Evaluate(ctx context.Context, rules []Rule, store *Store, data Data) ([]Tri
 				return triggers, fmt.Errorf("rule %s: %w", rule.Name, err)
 			}
 			if ok {
+				dbg.Debugf("rule %s condition matched: %s", rule.Name, when.Condition)
 				triggers = append(triggers, Trigger{
 					Rule:    rule,
 					Message: fmt.Sprintf("Rule %s triggered: %s", rule.Name, when.Condition),
@@ -86,10 +87,14 @@ func captureObservation(obs Observe, store *Store, data Data) error {
 	if err != nil {
 		return err
 	}
-	return store.Set(obs.Variable, ObservedValue{
+	if err := store.Set(obs.Variable, ObservedValue{
 		Value:      val,
 		RecordedAt: now,
-	})
+	}); err != nil {
+		return err
+	}
+	dbg.Debugf("captured %s = %d from %q at %s", obs.Variable, val, obs.Value, now.Format(time.RFC3339))
+	return nil
 }
 
 var condPattern = regexp.MustCompile(`^\s*(.+?)\s*(<=|>=|==|!=|<|>)\s*(.+?)\s*$`)
@@ -209,11 +214,12 @@ func sameCalendarDay(a, b time.Time) bool {
 	return a.Year() == b.Year() && a.Month() == b.Month() && a.Day() == b.Day()
 }
 
-func shouldEvaluate(when When, now time.Time) bool {
+func shouldEvaluate(when When, now time.Time, ruleName string) bool {
 	// schedule (cron) wins if set
 	if when.Schedule != "" {
 		sched, err := cron.ParseStandard(when.Schedule)
 		if err != nil {
+			dbg.Debugf("rule %s skipping invalid schedule %q: %v", ruleName, when.Schedule, err)
 			return false
 		}
 		// check if now matches the schedule tick
@@ -222,12 +228,15 @@ func shouldEvaluate(when When, now time.Time) bool {
 	}
 
 	if len(when.DayOfMonth) > 0 && !matchesDayOfMonth(when.DayOfMonth, now.Day(), daysInMonth(now)) {
+		dbg.Debugf("rule %s day_of_month gate does not match at %s", ruleName, now.Format(time.RFC3339))
 		return false
 	}
 	if len(when.DaysOfWeek) > 0 && !matchesDayOfWeek(when.DaysOfWeek, now.Weekday()) {
+		dbg.Debugf("rule %s days_of_week gate does not match at %s", ruleName, now.Format(time.RFC3339))
 		return false
 	}
 	if when.NthWeekday != "" && !matchesNthWeekday(when.NthWeekday, now) {
+		dbg.Debugf("rule %s nth_weekday gate %q does not match at %s", ruleName, when.NthWeekday, now.Format(time.RFC3339))
 		return false
 	}
 	return true
