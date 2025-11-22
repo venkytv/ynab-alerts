@@ -25,6 +25,7 @@ type Config struct {
 	Debug        bool
 	DayStart     time.Duration // offset from midnight (optional)
 	DayEnd       time.Duration // offset from midnight (optional)
+	Heartbeat    HeartbeatConfig
 }
 
 // PushoverConfig captures credentials for the default notifier.
@@ -34,16 +35,37 @@ type PushoverConfig struct {
 	Device   string
 }
 
+// HeartbeatConfig controls NATS heartbeat publishing for liveness monitoring.
+type HeartbeatConfig struct {
+	Enabled     bool
+	NATSURL     string
+	Subject     string
+	Prefix      string
+	Interval    time.Duration
+	Skippable   *int
+	GracePeriod *time.Duration
+	Description string
+}
+
 const (
 	defaultBaseURL      = "https://api.ynab.com/v1"
 	defaultRulesDir     = "rules"
 	defaultPollInterval = time.Hour
 	defaultNotifier     = "pushover"
+	defaultHBPfx        = "heartbeat"
+	defaultHBNATSURL    = "nats://localhost:4222"
+	defaultHBInterval   = time.Minute
+	defaultHBDesc       = "YNAB Alerts"
 )
 
 // DefaultPollInterval returns the baseline daemon poll interval.
 func DefaultPollInterval() time.Duration {
 	return defaultPollInterval
+}
+
+// DefaultHeartbeatInterval returns the baseline heartbeat publish interval.
+func DefaultHeartbeatInterval() time.Duration {
+	return defaultHBInterval
 }
 
 // FromEnv builds a Config from environment variables.
@@ -92,7 +114,36 @@ func (c Config) Validate() error {
 	if (c.DayStart > 0 || c.DayEnd > 0) && c.DayStart >= c.DayEnd {
 		return errors.New("day_start must be before day_end")
 	}
+	if c.HeartbeatEnabled() {
+		if strings.TrimSpace(c.Heartbeat.NATSURL) == "" {
+			return errors.New("heartbeat nats_url is required when enabled")
+		}
+		if strings.TrimSpace(c.Heartbeat.Subject) == "" {
+			return errors.New("heartbeat subject is required when enabled")
+		}
+		if c.Heartbeat.Interval <= 0 {
+			return errors.New("heartbeat interval must be > 0")
+		}
+		if c.Heartbeat.Prefix == "" {
+			return errors.New("heartbeat prefix must be set")
+		}
+		if c.Heartbeat.Skippable != nil && *c.Heartbeat.Skippable < 0 {
+			return errors.New("heartbeat skippable cannot be negative")
+		}
+		if c.Heartbeat.GracePeriod != nil && *c.Heartbeat.GracePeriod < 0 {
+			return errors.New("heartbeat grace period cannot be negative")
+		}
+	}
 	return nil
+}
+
+// HeartbeatEnabled reports whether heartbeat publishing should run.
+func (c Config) HeartbeatEnabled() bool {
+	hb := c.Heartbeat
+	if hb.Enabled {
+		return true
+	}
+	return strings.TrimSpace(hb.NATSURL) != "" && strings.TrimSpace(hb.Subject) != ""
 }
 
 func valueOrDefault(val, def string) string {
@@ -118,6 +169,14 @@ func parseBoolEnv(raw string, current bool) bool {
 	return parseBool(raw)
 }
 
+func intPtr(v int) *int {
+	return &v
+}
+
+func durationPtr(v time.Duration) *time.Duration {
+	return &v
+}
+
 // ParseMilliunits converts a string dollars amount to milliunits if given.
 // This is a helper for reading numeric env values expressed in dollars.
 func ParseMilliunits(v string) (int64, error) {
@@ -141,23 +200,35 @@ func ParseTimeOfDay(val string) (time.Duration, error) {
 }
 
 type fileConfig struct {
-	Token        string        `yaml:"token"`
-	BudgetID     string        `yaml:"budget_id"`
-	BaseURL      string        `yaml:"base_url"`
-	RulesDir     string        `yaml:"rules_dir"`
-	PollInterval string        `yaml:"poll_interval"`
-	Notifier     string        `yaml:"notifier"`
-	ObservePath  string        `yaml:"observe_path"`
-	Debug        *bool         `yaml:"debug"`
-	DayStart     string        `yaml:"day_start"`
-	DayEnd       string        `yaml:"day_end"`
-	Pushover     pushoverBlock `yaml:"pushover"`
+	Token        string         `yaml:"token"`
+	BudgetID     string         `yaml:"budget_id"`
+	BaseURL      string         `yaml:"base_url"`
+	RulesDir     string         `yaml:"rules_dir"`
+	PollInterval string         `yaml:"poll_interval"`
+	Notifier     string         `yaml:"notifier"`
+	ObservePath  string         `yaml:"observe_path"`
+	Debug        *bool          `yaml:"debug"`
+	DayStart     string         `yaml:"day_start"`
+	DayEnd       string         `yaml:"day_end"`
+	Pushover     pushoverBlock  `yaml:"pushover"`
+	Heartbeat    heartbeatBlock `yaml:"heartbeat"`
 }
 
 type pushoverBlock struct {
 	AppToken string `yaml:"app_token"`
 	UserKey  string `yaml:"user_key"`
 	Device   string `yaml:"device"`
+}
+
+type heartbeatBlock struct {
+	Enabled     *bool  `yaml:"enabled"`
+	NATSURL     string `yaml:"nats_url"`
+	Subject     string `yaml:"subject"`
+	Prefix      string `yaml:"prefix"`
+	Interval    string `yaml:"interval"`
+	Skippable   *int   `yaml:"skippable"`
+	Grace       string `yaml:"grace"`
+	Description string `yaml:"description"`
 }
 
 func defaultConfig() Config {
@@ -181,6 +252,16 @@ func defaultConfig() Config {
 		Debug:        false,
 		DayStart:     0,
 		DayEnd:       0,
+		Heartbeat: HeartbeatConfig{
+			Enabled:     false,
+			NATSURL:     defaultHBNATSURL,
+			Subject:     "ynab-alerts",
+			Prefix:      defaultHBPfx,
+			Interval:    defaultHBInterval,
+			Skippable:   intPtr(5),
+			GracePeriod: durationPtr(10 * time.Minute),
+			Description: defaultHBDesc,
+		},
 	}
 }
 
@@ -209,6 +290,40 @@ func applyEnv(cfg *Config) error {
 		} else {
 			return err
 		}
+	}
+	cfg.Heartbeat.Enabled = parseBoolEnv(os.Getenv("YNAB_HEARTBEAT_ENABLED"), cfg.Heartbeat.Enabled)
+	if v := strings.TrimSpace(os.Getenv("YNAB_HEARTBEAT_NATS_URL")); v != "" {
+		cfg.Heartbeat.NATSURL = v
+	}
+	if v := strings.TrimSpace(os.Getenv("YNAB_HEARTBEAT_SUBJECT")); v != "" {
+		cfg.Heartbeat.Subject = v
+	}
+	if v := strings.TrimSpace(os.Getenv("YNAB_HEARTBEAT_PREFIX")); v != "" {
+		cfg.Heartbeat.Prefix = v
+	}
+	if v := strings.TrimSpace(os.Getenv("YNAB_HEARTBEAT_DESCRIPTION")); v != "" {
+		cfg.Heartbeat.Description = v
+	}
+	if v := strings.TrimSpace(os.Getenv("YNAB_HEARTBEAT_INTERVAL")); v != "" {
+		dur, err := time.ParseDuration(v)
+		if err != nil {
+			return err
+		}
+		cfg.Heartbeat.Interval = dur
+	}
+	if v := strings.TrimSpace(os.Getenv("YNAB_HEARTBEAT_SKIPPABLE")); v != "" {
+		val, err := strconv.Atoi(v)
+		if err != nil {
+			return err
+		}
+		cfg.Heartbeat.Skippable = &val
+	}
+	if v := strings.TrimSpace(os.Getenv("YNAB_HEARTBEAT_GRACE")); v != "" {
+		dur, err := time.ParseDuration(v)
+		if err != nil {
+			return err
+		}
+		cfg.Heartbeat.GracePeriod = &dur
 	}
 
 	if poll := strings.TrimSpace(os.Getenv("YNAB_POLL_INTERVAL")); poll != "" {
@@ -281,6 +396,38 @@ func applyFile(cfg *Config, path string) error {
 	}
 	if fc.Pushover.Device != "" {
 		cfg.Pushover.Device = strings.TrimSpace(fc.Pushover.Device)
+	}
+	if fc.Heartbeat.Enabled != nil {
+		cfg.Heartbeat.Enabled = *fc.Heartbeat.Enabled
+	}
+	if fc.Heartbeat.NATSURL != "" {
+		cfg.Heartbeat.NATSURL = strings.TrimSpace(fc.Heartbeat.NATSURL)
+	}
+	if fc.Heartbeat.Subject != "" {
+		cfg.Heartbeat.Subject = strings.TrimSpace(fc.Heartbeat.Subject)
+	}
+	if fc.Heartbeat.Prefix != "" {
+		cfg.Heartbeat.Prefix = strings.TrimSpace(fc.Heartbeat.Prefix)
+	}
+	if fc.Heartbeat.Description != "" {
+		cfg.Heartbeat.Description = strings.TrimSpace(fc.Heartbeat.Description)
+	}
+	if fc.Heartbeat.Interval != "" {
+		dur, err := time.ParseDuration(strings.TrimSpace(fc.Heartbeat.Interval))
+		if err != nil {
+			return err
+		}
+		cfg.Heartbeat.Interval = dur
+	}
+	if fc.Heartbeat.Skippable != nil {
+		cfg.Heartbeat.Skippable = fc.Heartbeat.Skippable
+	}
+	if fc.Heartbeat.Grace != "" {
+		dur, err := time.ParseDuration(strings.TrimSpace(fc.Heartbeat.Grace))
+		if err != nil {
+			return err
+		}
+		cfg.Heartbeat.GracePeriod = &dur
 	}
 	return nil
 }

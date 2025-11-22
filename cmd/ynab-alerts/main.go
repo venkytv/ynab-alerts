@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ynab-alerts/internal/config"
+	"ynab-alerts/internal/heartbeat"
 	"ynab-alerts/internal/notifier"
 	"ynab-alerts/internal/rules"
 	"ynab-alerts/internal/service"
@@ -32,6 +33,14 @@ var (
 	flagConfigPath   string
 	flagDayStart     string
 	flagDayEnd       string
+	flagHBEnabled    bool
+	flagHBNATSURL    string
+	flagHBSubject    string
+	flagHBPrefix     string
+	flagHBInterval   string
+	flagHBSkippable  int
+	flagHBGrace      string
+	flagHBDesc       string
 )
 
 func main() {
@@ -57,6 +66,14 @@ func main() {
 	rootCmd.PersistentFlags().StringVar(&flagConfigPath, "config", "", "Path to config file (YAML/JSON)")
 	rootCmd.PersistentFlags().StringVar(&flagDayStart, "day-start", "", "Earliest time of day to evaluate (HH:MM, 24h)")
 	rootCmd.PersistentFlags().StringVar(&flagDayEnd, "day-end", "", "Latest time of day to evaluate (HH:MM, 24h)")
+	rootCmd.PersistentFlags().BoolVar(&flagHBEnabled, "heartbeat", false, "Enable heartbeat publishing")
+	rootCmd.PersistentFlags().StringVar(&flagHBNATSURL, "heartbeat-nats-url", "", "NATS URL to publish heartbeats")
+	rootCmd.PersistentFlags().StringVar(&flagHBSubject, "heartbeat-subject", "", "Heartbeat subject (appended to prefix)")
+	rootCmd.PersistentFlags().StringVar(&flagHBPrefix, "heartbeat-prefix", "", "Heartbeat subject prefix")
+	rootCmd.PersistentFlags().StringVar(&flagHBInterval, "heartbeat-interval", "", "Heartbeat interval (e.g. 30s)")
+	rootCmd.PersistentFlags().IntVar(&flagHBSkippable, "heartbeat-skippable", 0, "Heartbeats allowed to miss before alerting (0 to disable)")
+	rootCmd.PersistentFlags().StringVar(&flagHBGrace, "heartbeat-grace", "", "Grace duration with no heartbeats before alerting (e.g. 2m)")
+	rootCmd.PersistentFlags().StringVar(&flagHBDesc, "heartbeat-description", "", "Human-friendly heartbeat description")
 
 	runCmd := &cobra.Command{
 		Use:   "run",
@@ -186,10 +203,46 @@ func runDaemon(ctx context.Context, cmd *cobra.Command) error {
 		}
 		cfg.DayEnd = dur
 	}
+	if cmd.Flags().Changed("heartbeat") {
+		cfg.Heartbeat.Enabled = flagHBEnabled
+	}
+	if cmd.Flags().Changed("heartbeat-nats-url") {
+		cfg.Heartbeat.NATSURL = strings.TrimSpace(flagHBNATSURL)
+	}
+	if cmd.Flags().Changed("heartbeat-subject") {
+		cfg.Heartbeat.Subject = strings.TrimSpace(flagHBSubject)
+	}
+	if cmd.Flags().Changed("heartbeat-prefix") {
+		cfg.Heartbeat.Prefix = strings.TrimSpace(flagHBPrefix)
+	}
+	if cmd.Flags().Changed("heartbeat-description") {
+		cfg.Heartbeat.Description = strings.TrimSpace(flagHBDesc)
+	}
+	if cmd.Flags().Changed("heartbeat-interval") {
+		dur, err := time.ParseDuration(flagHBInterval)
+		if err != nil {
+			return fmt.Errorf("invalid heartbeat-interval: %w", err)
+		}
+		cfg.Heartbeat.Interval = dur
+	}
+	if cmd.Flags().Changed("heartbeat-skippable") {
+		val := flagHBSkippable
+		cfg.Heartbeat.Skippable = &val
+	}
+	if cmd.Flags().Changed("heartbeat-grace") {
+		dur, err := time.ParseDuration(flagHBGrace)
+		if err != nil {
+			return fmt.Errorf("invalid heartbeat-grace: %w", err)
+		}
+		cfg.Heartbeat.GracePeriod = &dur
+	}
 
 	if err := cfg.Validate(); err != nil {
 		return fmt.Errorf("config error: %w", err)
 	}
+
+	daemonCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	store, err := rules.NewStore(cfg.ObservePath)
 	if err != nil {
@@ -216,8 +269,20 @@ func runDaemon(ctx context.Context, cmd *cobra.Command) error {
 	}
 	svc := service.New(cfg, ynabClient, notif, store)
 
+	var stopHeartbeat func()
+	if cfg.HeartbeatEnabled() {
+		hbStop, err := heartbeat.Start(daemonCtx, cfg.Heartbeat)
+		if err != nil {
+			return fmt.Errorf("heartbeat error: %w", err)
+		}
+		stopHeartbeat = hbStop
+	}
+	if stopHeartbeat != nil {
+		defer stopHeartbeat()
+	}
+
 	log.Println("ynab-alerts daemon starting")
-	if err := svc.Run(ctx); err != nil && ctx.Err() == nil {
+	if err := svc.Run(daemonCtx); err != nil && daemonCtx.Err() == nil {
 		return err
 	}
 	return nil

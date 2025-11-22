@@ -19,6 +19,15 @@ Daemon that polls YNAB and emits alerts when rule conditions are met.
        app_token: ""
        user_key: ""
        device: ""
+     heartbeat:
+       enabled: true
+       nats_url: "nats://localhost:4222"
+       subject: "ynab-alerts"
+       prefix: "heartbeat"
+       interval: 1m
+       skippable: 5
+       grace: 10m
+       description: "YNAB Alerts daemon"
      ```
    - Or environment:
      - `YNAB_TOKEN` — personal access token.
@@ -29,6 +38,7 @@ Daemon that polls YNAB and emits alerts when rule conditions are met.
      - `YNAB_DEBUG` — optional, set to `true` to emit debug logs (captures, matches).
      - `YNAB_DAY_START`, `YNAB_DAY_END` — optional, HH:MM (24h) window to limit evaluations (e.g., `06:00` / `22:00`).
      - `PUSHOVER_APP_TOKEN`, `PUSHOVER_USER_KEY`, `PUSHOVER_DEVICE` — Pushover credentials (default notifier).
+     - Heartbeat (optional; defaults in parentheses): `YNAB_HEARTBEAT_ENABLED` (`false`), `YNAB_HEARTBEAT_NATS_URL` (`nats://localhost:4222`), `YNAB_HEARTBEAT_SUBJECT` (`ynab-alerts`), `YNAB_HEARTBEAT_PREFIX` (`heartbeat`), `YNAB_HEARTBEAT_INTERVAL` (`1m`), `YNAB_HEARTBEAT_SKIPPABLE` (`5`), `YNAB_HEARTBEAT_GRACE` (`10m`), `YNAB_HEARTBEAT_DESCRIPTION` (`YNAB Alerts`).
 2. Inspect data to write rules:
    - List budgets: `go run ./cmd/ynab-alerts list-budgets`
    - List accounts for a budget: `go run ./cmd/ynab-alerts list-accounts --budget <budget-id>`
@@ -36,7 +46,7 @@ Daemon that polls YNAB and emits alerts when rule conditions are met.
 4. Define rules in YAML (see `rules/sample.yaml`).
 5. Run: `go run ./cmd/ynab-alerts run` (add `--notifier=log` to debug without sending).
 
-CLI overrides (persistent flags): `--config`, `--token`, `--budget`, `--base-url`, `--rules`, `--poll`, `--notifier=pushover|log`, `--observe-path`, `--debug`, `--day-start`, `--day-end`. Subcommands: `run`, `list-budgets`, `list-accounts`, `lint`. Precedence: flags > env vars > config file > defaults. Enable verbose capture/condition logs with `--debug` or `YNAB_DEBUG=true`. Set `--day-start`/`--day-end` (HH:MM) to avoid alerts outside a daily window.
+CLI overrides (persistent flags): `--config`, `--token`, `--budget`, `--base-url`, `--rules`, `--poll`, `--notifier=pushover|log`, `--observe-path`, `--debug`, `--day-start`, `--day-end`, heartbeat-specific flags (`--heartbeat`, `--heartbeat-nats-url`, `--heartbeat-subject`, `--heartbeat-prefix`, `--heartbeat-interval`, `--heartbeat-skippable`, `--heartbeat-grace`, `--heartbeat-description`). Subcommands: `run`, `list-budgets`, `list-accounts`, `lint`. Precedence: flags > env vars > config file > defaults. Enable verbose capture/condition logs with `--debug` or `YNAB_DEBUG=true`. Set `--day-start`/`--day-end` (HH:MM) to avoid alerts outside a daily window.
 
 ## Rule DSL (brief)
 ```yaml
