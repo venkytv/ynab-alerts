@@ -21,3 +21,6 @@ goarch: amd64
 # {{ .Os }} will be replaced by goos field in the config file.
 # {{ .Arch }} will be replaced by goarch field in the config file.
 binary: ynab-alerts-{{ .Os }}-{{ .Arch }}
+
+# Directory containing the main package to build.
+dir: ./cmd/ynab-alerts
