@@ -1,33 +1,30 @@
-name: Release
+# This workflow lets you compile your Go project using a SLSA3 compliant builder.
+# This workflow will generate a provenance file describing the steps performed to
+# generate the final binaries. Learn more at https://github.com/slsa-framework/slsa-github-generator.
 
+name: SLSA Go releaser
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
   release:
-    types: [published]
+    types: [created]
 
-permissions:
-  contents: write
+permissions: read-all
 
 jobs:
-  goreleaser:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.21.x"
-
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          version: latest
-          args: release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  build:
+    permissions:
+      id-token: write # To sign.
+      contents: write # To upload release assets.
+      actions: read   # To read workflow path.
+    strategy:
+      matrix:
+        os:
+          - darwin
+          - linux
+        arch:
+          - amd64
+          - arm64
+    uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v2.0.0
+    with:
+      go-version: 1.21
+      config-file: .slsa-goreleaser/${{ matrix.os }}-${{ matrix.arch }}.yml
