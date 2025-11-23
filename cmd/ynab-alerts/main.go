@@ -38,7 +38,6 @@ var (
 	flagHBSubject    string
 	flagHBPrefix     string
 	flagHBInterval   string
-	flagHBSkippable  int
 	flagHBGrace      string
 	flagHBDesc       string
 )
@@ -71,7 +70,6 @@ func main() {
 	rootCmd.PersistentFlags().StringVar(&flagHBSubject, "heartbeat-subject", "", "Heartbeat subject (appended to prefix)")
 	rootCmd.PersistentFlags().StringVar(&flagHBPrefix, "heartbeat-prefix", "", "Heartbeat subject prefix")
 	rootCmd.PersistentFlags().StringVar(&flagHBInterval, "heartbeat-interval", "", "Heartbeat interval (e.g. 30s)")
-	rootCmd.PersistentFlags().IntVar(&flagHBSkippable, "heartbeat-skippable", 0, "Heartbeats allowed to miss before alerting (0 to disable)")
 	rootCmd.PersistentFlags().StringVar(&flagHBGrace, "heartbeat-grace", "", "Grace duration with no heartbeats before alerting (e.g. 2m)")
 	rootCmd.PersistentFlags().StringVar(&flagHBDesc, "heartbeat-description", "", "Human-friendly heartbeat description")
 
@@ -224,10 +222,6 @@ func runDaemon(ctx context.Context, cmd *cobra.Command) error {
 			return fmt.Errorf("invalid heartbeat-interval: %w", err)
 		}
 		cfg.Heartbeat.Interval = dur
-	}
-	if cmd.Flags().Changed("heartbeat-skippable") {
-		val := flagHBSkippable
-		cfg.Heartbeat.Skippable = &val
 	}
 	if cmd.Flags().Changed("heartbeat-grace") {
 		dur, err := time.ParseDuration(flagHBGrace)

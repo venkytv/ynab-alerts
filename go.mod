@@ -6,7 +6,7 @@ require (
 	github.com/nats-io/nats.go v1.33.1
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/spf13/cobra v1.8.0
-	github.com/venkytv/nats-heartbeat v0.1.1
+	github.com/venkytv/nats-heartbeat v0.2.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 

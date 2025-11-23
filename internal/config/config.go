@@ -42,7 +42,6 @@ type HeartbeatConfig struct {
 	Subject     string
 	Prefix      string
 	Interval    time.Duration
-	Skippable   *int
 	GracePeriod *time.Duration
 	Description string
 }
@@ -127,9 +126,6 @@ func (c Config) Validate() error {
 		if c.Heartbeat.Prefix == "" {
 			return errors.New("heartbeat prefix must be set")
 		}
-		if c.Heartbeat.Skippable != nil && *c.Heartbeat.Skippable < 0 {
-			return errors.New("heartbeat skippable cannot be negative")
-		}
 		if c.Heartbeat.GracePeriod != nil && *c.Heartbeat.GracePeriod < 0 {
 			return errors.New("heartbeat grace period cannot be negative")
 		}
@@ -167,10 +163,6 @@ func parseBoolEnv(raw string, current bool) bool {
 		return current
 	}
 	return parseBool(raw)
-}
-
-func intPtr(v int) *int {
-	return &v
 }
 
 func durationPtr(v time.Duration) *time.Duration {
@@ -226,7 +218,6 @@ type heartbeatBlock struct {
 	Subject     string `yaml:"subject"`
 	Prefix      string `yaml:"prefix"`
 	Interval    string `yaml:"interval"`
-	Skippable   *int   `yaml:"skippable"`
 	Grace       string `yaml:"grace"`
 	Description string `yaml:"description"`
 }
@@ -258,7 +249,6 @@ func defaultConfig() Config {
 			Subject:     "ynab-alerts",
 			Prefix:      defaultHBPfx,
 			Interval:    defaultHBInterval,
-			Skippable:   intPtr(5),
 			GracePeriod: durationPtr(10 * time.Minute),
 			Description: defaultHBDesc,
 		},
@@ -310,13 +300,6 @@ func applyEnv(cfg *Config) error {
 			return err
 		}
 		cfg.Heartbeat.Interval = dur
-	}
-	if v := strings.TrimSpace(os.Getenv("YNAB_HEARTBEAT_SKIPPABLE")); v != "" {
-		val, err := strconv.Atoi(v)
-		if err != nil {
-			return err
-		}
-		cfg.Heartbeat.Skippable = &val
 	}
 	if v := strings.TrimSpace(os.Getenv("YNAB_HEARTBEAT_GRACE")); v != "" {
 		dur, err := time.ParseDuration(v)
@@ -418,9 +401,6 @@ func applyFile(cfg *Config, path string) error {
 			return err
 		}
 		cfg.Heartbeat.Interval = dur
-	}
-	if fc.Heartbeat.Skippable != nil {
-		cfg.Heartbeat.Skippable = fc.Heartbeat.Skippable
 	}
 	if fc.Heartbeat.Grace != "" {
 		dur, err := time.ParseDuration(strings.TrimSpace(fc.Heartbeat.Grace))

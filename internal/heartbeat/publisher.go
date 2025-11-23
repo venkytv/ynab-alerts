@@ -3,7 +3,6 @@ package heartbeat
 import (
 	"context"
 	"log"
-	"strconv"
 	"strings"
 	"time"
 
@@ -54,16 +53,12 @@ func (r *runner) loop(ctx context.Context) {
 	if r.cfg.GracePeriod != nil {
 		grace = r.cfg.GracePeriod.String()
 	}
-	skippable := "none"
-	if r.cfg.Skippable != nil {
-		skippable = strconv.Itoa(*r.cfg.Skippable)
-	}
 
 	fullSubject := r.cfg.Subject
 	if strings.TrimSpace(r.cfg.Prefix) != "" {
 		fullSubject = strings.TrimSuffix(r.cfg.Prefix, ".") + "." + r.cfg.Subject
 	}
-	log.Printf("heartbeat enabled: publishing %s every %s (grace=%s skippable=%s)", fullSubject, interval, grace, skippable)
+	log.Printf("heartbeat enabled: publishing %s every %s (grace=%s)", fullSubject, interval, grace)
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -84,7 +79,6 @@ func (r *runner) publish(ctx context.Context) {
 		Subject:     strings.TrimSpace(r.cfg.Subject),
 		Interval:    r.cfg.Interval,
 		Description: strings.TrimSpace(r.cfg.Description),
-		Skippable:   r.cfg.Skippable,
 		GracePeriod: r.cfg.GracePeriod,
 	}
 	if msg.Description == "" {
