@@ -90,6 +90,30 @@ func TestEvaluateSupportsAddition(t *testing.T) {
 	}
 }
 
+func TestEvaluateFullArithmetic(t *testing.T) {
+	r := Rule{
+		Name: "full-arith",
+		When: WhenList{
+			{Condition: `account.balance("Checking") < var.cc_due + 25 * 0.5`},  // precedence * over +
+			{Condition: `-(var.cc_due - 30) < account.balance("Checking")`},     // unary minus + subtraction
+			{Condition: `account.balance("Checking") > (var.cc_due / 2) + 10`},  // division
+			{Condition: `account.balance("Checking") > var.cc_due - (5 * 2.5)`}, // subtraction with parens
+		},
+	}
+	data := Data{
+		Accounts: map[string]int64{"Checking": 90_000}, // $90.00
+		Vars:     map[string]int64{"cc_due": 80_000},   // $80.00
+		Now:      time.Now(),
+	}
+	trigs, err := Evaluate(context.Background(), []Rule{r}, nil, data)
+	if err != nil {
+		t.Fatalf("evaluate error: %v", err)
+	}
+	if len(trigs) != 4 {
+		t.Fatalf("expected all arithmetic conditions to match, got %d", len(trigs))
+	}
+}
+
 func TestEvaluateCronSchedule(t *testing.T) {
 	r := Rule{
 		Name:    "cron-sched",

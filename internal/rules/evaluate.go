@@ -5,11 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/expr-lang/expr"
 	"github.com/robfig/cron/v3"
 )
 
@@ -83,7 +83,7 @@ func captureObservation(obs Observe, store *Store, data Data) error {
 		return nil
 	}
 
-	val, err := resolveValue(obs.Value, data)
+	val, err := evalAmount(obs.Value, data)
 	if err != nil {
 		return err
 	}
@@ -97,205 +97,122 @@ func captureObservation(obs Observe, store *Store, data Data) error {
 	return nil
 }
 
-var condPattern = regexp.MustCompile(`^\s*(.+?)\s*(<=|>=|==|!=|<|>)\s*(.+?)\s*$`)
-
 func evaluateCondition(cond string, data Data) (bool, error) {
-	m := condPattern.FindStringSubmatch(cond)
-	if len(m) != 4 {
-		return false, fmt.Errorf("unable to parse condition %q", cond)
+	if err := ensureVars(cond, data.Vars); err != nil {
+		return false, err
 	}
-	left, op, right := strings.TrimSpace(m[1]), m[2], strings.TrimSpace(m[3])
-
-	lv, err := resolveValue(left, data)
+	env := buildEnv(data)
+	program, err := expr.Compile(cond, expr.Env(env))
 	if err != nil {
-		return false, fmt.Errorf("left side: %w", err)
+		return false, err
 	}
-	rv, err := resolveValue(right, data)
+	out, err := expr.Run(program, env)
 	if err != nil {
-		return false, fmt.Errorf("right side: %w", err)
+		return false, err
 	}
+	b, ok := out.(bool)
+	if !ok {
+		return false, fmt.Errorf("condition did not evaluate to boolean (got %T)", out)
+	}
+	return b, nil
+}
 
-	switch op {
-	case "<":
-		return lv < rv, nil
-	case "<=":
-		return lv <= rv, nil
-	case ">":
-		return lv > rv, nil
-	case ">=":
-		return lv >= rv, nil
-	case "==":
-		return lv == rv, nil
-	case "!=":
-		return lv != rv, nil
+func evalAmount(exprStr string, data Data) (int64, error) {
+	if err := ensureVars(exprStr, data.Vars); err != nil {
+		return 0, err
+	}
+	env := buildEnv(data)
+	program, err := expr.Compile(exprStr, expr.Env(env))
+	if err != nil {
+		return 0, err
+	}
+	out, err := expr.Run(program, env)
+	if err != nil {
+		return 0, err
+	}
+	val, err := coerceNumber(out)
+	if err != nil {
+		return 0, err
+	}
+	return toMilli(val), nil
+}
+
+type evalEnv struct {
+	Account accountFuncs       `expr:"account"`
+	Var     map[string]float64 `expr:"var"`
+}
+
+type accountFuncs struct {
+	Balance func(string) (float64, error) `expr:"balance"`
+	Due     func(string) (float64, error) `expr:"due"`
+}
+
+func buildEnv(data Data) evalEnv {
+	vars := make(map[string]float64, len(data.Vars))
+	for k, v := range data.Vars {
+		vars[k] = float64(v) / 1000
+	}
+	valueForAccount := func(name string) (float64, error) {
+		val, ok := data.Accounts[name]
+		if !ok {
+			return 0, fmt.Errorf("account %q not found", name)
+		}
+		return float64(val) / 1000, nil
+	}
+	account := accountFuncs{
+		Balance: valueForAccount,
+		Due:     valueForAccount,
+	}
+	return evalEnv{
+		Account: account,
+		Var:     vars,
+	}
+}
+
+func ensureVars(expr string, vars map[string]int64) error {
+	matches := varRefPattern.FindAllStringSubmatch(expr, -1)
+	for _, m := range matches {
+		name := m[1]
+		if _, ok := vars[name]; !ok {
+			return fmt.Errorf("variable %q not found", name)
+		}
+	}
+	return nil
+}
+
+func coerceNumber(v interface{}) (float64, error) {
+	switch n := v.(type) {
+	case int:
+		return float64(n), nil
+	case int64:
+		return float64(n), nil
+	case int32:
+		return float64(n), nil
+	case int16:
+		return float64(n), nil
+	case int8:
+		return float64(n), nil
+	case uint:
+		return float64(n), nil
+	case uint64:
+		return float64(n), nil
+	case uint32:
+		return float64(n), nil
+	case uint16:
+		return float64(n), nil
+	case uint8:
+		return float64(n), nil
+	case float64:
+		return n, nil
+	case float32:
+		return float64(n), nil
 	default:
-		return false, fmt.Errorf("unknown operator %q", op)
+		return 0, fmt.Errorf("expression did not evaluate to number (got %T)", v)
 	}
 }
 
-func resolveValue(expr string, data Data) (int64, error) {
-	expr = strings.TrimSpace(expr)
-
-	// unwrap outer parentheses to support "(var.foo + 10)" style expressions
-	expr = trimOuterParens(expr)
-
-	// addition: a + b (only at top level to respect parentheses)
-	if idx := findTopLevelOp(expr, '+'); idx != -1 {
-		left := strings.TrimSpace(expr[:idx])
-		right := strings.TrimSpace(expr[idx+1:])
-		lv, err := resolveValue(left, data)
-		if err != nil {
-			return 0, err
-		}
-		rv, err := resolveValue(right, data)
-		if err != nil {
-			return 0, err
-		}
-		return lv + rv, nil
-	}
-
-	// multiplication: allow numeric factors on either side, e.g. "0.8 * var.x" or "var.x * 0.8"
-	if idx := findTopLevelOp(expr, '*'); idx != -1 {
-		left := strings.TrimSpace(expr[:idx])
-		right := strings.TrimSpace(expr[idx+1:])
-
-		if factor, err := strconv.ParseFloat(left, 64); err == nil {
-			rv, err := resolveValue(right, data)
-			if err != nil {
-				return 0, err
-			}
-			return int64(math.Round(float64(rv) * factor)), nil
-		}
-		if factor, err := strconv.ParseFloat(right, 64); err == nil {
-			lv, err := resolveValue(left, data)
-			if err != nil {
-				return 0, err
-			}
-			return int64(math.Round(float64(lv) * factor)), nil
-		}
-		return 0, fmt.Errorf("multiplication requires a numeric factor in %q", expr)
-	}
-
-	// account.balance("Name")
-	if strings.HasPrefix(expr, "account.balance(") {
-		name := extractArg(expr, "account.balance")
-		if name == "" {
-			return 0, fmt.Errorf("account balance missing name")
-		}
-		val, ok := data.Accounts[name]
-		if !ok {
-			return 0, fmt.Errorf("account %q not found", name)
-		}
-		return val, nil
-	}
-
-	// account.due("Name") currently treated as balance
-	if strings.HasPrefix(expr, "account.due(") {
-		name := extractArg(expr, "account.due")
-		if name == "" {
-			return 0, fmt.Errorf("account due missing name")
-		}
-		val, ok := data.Accounts[name]
-		if !ok {
-			return 0, fmt.Errorf("account %q not found", name)
-		}
-		return val, nil
-	}
-
-	// variable reference var.foo
-	if strings.HasPrefix(expr, "var.") {
-		key := strings.TrimPrefix(expr, "var.")
-		val, ok := data.Vars[key]
-		if !ok {
-			return 0, fmt.Errorf("variable %q not found", key)
-		}
-		return val, nil
-	}
-
-	// numeric literal (dollars) -> milliunits
-	if num, err := strconv.ParseFloat(expr, 64); err == nil {
-		return int64(math.Round(num * 1000)), nil
-	}
-
-	return 0, fmt.Errorf("unsupported expression %q", expr)
-}
-
-func trimOuterParens(expr string) string {
-	for {
-		expr = strings.TrimSpace(expr)
-		if len(expr) < 2 || expr[0] != '(' || expr[len(expr)-1] != ')' {
-			return expr
-		}
-		if hasMatchingParens(expr) {
-			expr = expr[1 : len(expr)-1]
-			continue
-		}
-		return expr
-	}
-}
-
-func hasMatchingParens(expr string) bool {
-	depth := 0
-	inQuote := false
-	for i := 0; i < len(expr); i++ {
-		switch expr[i] {
-		case '"':
-			inQuote = !inQuote
-		case '(':
-			if !inQuote {
-				depth++
-			}
-		case ')':
-			if !inQuote {
-				depth--
-				if depth == 0 && i != len(expr)-1 {
-					return false
-				}
-			}
-		}
-	}
-	return depth == 0
-}
-
-func findTopLevelOp(expr string, target byte) int {
-	depth := 0
-	inQuote := false
-	for i := 0; i < len(expr); i++ {
-		switch expr[i] {
-		case '"':
-			inQuote = !inQuote
-		case '(':
-			if !inQuote {
-				depth++
-			}
-		case ')':
-			if !inQuote && depth > 0 {
-				depth--
-			}
-		}
-		if inQuote || depth > 0 {
-			continue
-		}
-		if expr[i] == target {
-			return i
-		}
-	}
-	return -1
-}
-
-func extractArg(expr, prefix string) string {
-	start := strings.Index(expr, "(")
-	end := strings.LastIndex(expr, ")")
-	if start == -1 || end == -1 || end <= start {
-		return ""
-	}
-	arg := strings.TrimSpace(expr[start+1 : end])
-	arg = strings.Trim(arg, `"`)
-	arg = strings.Trim(arg, `'`)
-	if strings.HasPrefix(expr, prefix) {
-		return arg
-	}
-	return ""
+func toMilli(val float64) int64 {
+	return int64(math.Round(val * 1000))
 }
 
 func sameCalendarDay(a, b time.Time) bool {
