@@ -68,6 +68,28 @@ func TestEvaluateDollarsLiteral(t *testing.T) {
 	}
 }
 
+func TestEvaluateSupportsAddition(t *testing.T) {
+	r := Rule{
+		Name: "addition",
+		When: WhenList{
+			{Condition: `account.balance("Checking") < var.cc_due + 50`},
+			{Condition: `account.balance("Checking") < (var.cc_due + 75)`},
+		},
+	}
+	data := Data{
+		Accounts: map[string]int64{"Checking": 120_000}, // $120.00
+		Vars:     map[string]int64{"cc_due": 80_000},    // $80.00
+		Now:      time.Now(),
+	}
+	trigs, err := Evaluate(context.Background(), []Rule{r}, nil, data)
+	if err != nil {
+		t.Fatalf("evaluate error: %v", err)
+	}
+	if len(trigs) != 2 {
+		t.Fatalf("expected both addition conditions to match, got %d", len(trigs))
+	}
+}
+
 func TestEvaluateCronSchedule(t *testing.T) {
 	r := Rule{
 		Name:    "cron-sched",

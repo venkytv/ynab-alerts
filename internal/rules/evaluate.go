@@ -136,19 +136,44 @@ func evaluateCondition(cond string, data Data) (bool, error) {
 func resolveValue(expr string, data Data) (int64, error) {
 	expr = strings.TrimSpace(expr)
 
-	// simple multiplier pattern: a * b
-	if parts := strings.Split(expr, "*"); len(parts) == 2 {
-		factorStr := strings.TrimSpace(parts[0])
-		rest := strings.TrimSpace(parts[1])
+	// unwrap outer parentheses to support "(var.foo + 10)" style expressions
+	expr = trimOuterParens(expr)
 
-		factor, err := strconv.ParseFloat(factorStr, 64)
-		if err == nil {
-			val, err := resolveValue(rest, data)
+	// addition: a + b (only at top level to respect parentheses)
+	if idx := findTopLevelOp(expr, '+'); idx != -1 {
+		left := strings.TrimSpace(expr[:idx])
+		right := strings.TrimSpace(expr[idx+1:])
+		lv, err := resolveValue(left, data)
+		if err != nil {
+			return 0, err
+		}
+		rv, err := resolveValue(right, data)
+		if err != nil {
+			return 0, err
+		}
+		return lv + rv, nil
+	}
+
+	// multiplication: allow numeric factors on either side, e.g. "0.8 * var.x" or "var.x * 0.8"
+	if idx := findTopLevelOp(expr, '*'); idx != -1 {
+		left := strings.TrimSpace(expr[:idx])
+		right := strings.TrimSpace(expr[idx+1:])
+
+		if factor, err := strconv.ParseFloat(left, 64); err == nil {
+			rv, err := resolveValue(right, data)
 			if err != nil {
 				return 0, err
 			}
-			return int64(math.Round(float64(val) * factor)), nil
+			return int64(math.Round(float64(rv) * factor)), nil
 		}
+		if factor, err := strconv.ParseFloat(right, 64); err == nil {
+			lv, err := resolveValue(left, data)
+			if err != nil {
+				return 0, err
+			}
+			return int64(math.Round(float64(lv) * factor)), nil
+		}
+		return 0, fmt.Errorf("multiplication requires a numeric factor in %q", expr)
 	}
 
 	// account.balance("Name")
@@ -193,6 +218,69 @@ func resolveValue(expr string, data Data) (int64, error) {
 	}
 
 	return 0, fmt.Errorf("unsupported expression %q", expr)
+}
+
+func trimOuterParens(expr string) string {
+	for {
+		expr = strings.TrimSpace(expr)
+		if len(expr) < 2 || expr[0] != '(' || expr[len(expr)-1] != ')' {
+			return expr
+		}
+		if hasMatchingParens(expr) {
+			expr = expr[1 : len(expr)-1]
+			continue
+		}
+		return expr
+	}
+}
+
+func hasMatchingParens(expr string) bool {
+	depth := 0
+	inQuote := false
+	for i := 0; i < len(expr); i++ {
+		switch expr[i] {
+		case '"':
+			inQuote = !inQuote
+		case '(':
+			if !inQuote {
+				depth++
+			}
+		case ')':
+			if !inQuote {
+				depth--
+				if depth == 0 && i != len(expr)-1 {
+					return false
+				}
+			}
+		}
+	}
+	return depth == 0
+}
+
+func findTopLevelOp(expr string, target byte) int {
+	depth := 0
+	inQuote := false
+	for i := 0; i < len(expr); i++ {
+		switch expr[i] {
+		case '"':
+			inQuote = !inQuote
+		case '(':
+			if !inQuote {
+				depth++
+			}
+		case ')':
+			if !inQuote && depth > 0 {
+				depth--
+			}
+		}
+		if inQuote || depth > 0 {
+			continue
+		}
+		if expr[i] == target {
+			return i
+		}
+	}
+	return -1
 }
 
 func extractArg(expr, prefix string) string {
