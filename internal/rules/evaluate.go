@@ -98,8 +98,9 @@ func captureObservation(obs Observe, store *Store, data Data) error {
 }
 
 func evaluateCondition(cond string, data Data) (bool, error) {
-	if err := ensureVars(cond, data.Vars); err != nil {
-		return false, err
+	if missing := missingVars(cond, data.Vars); len(missing) > 0 {
+		dbg.Debugf("skipping condition %q: missing vars: %v", cond, missing)
+		return false, nil
 	}
 	env := buildEnv(data)
 	program, err := expr.Compile(cond, expr.Env(env))
@@ -118,8 +119,8 @@ func evaluateCondition(cond string, data Data) (bool, error) {
 }
 
 func evalAmount(exprStr string, data Data) (int64, error) {
-	if err := ensureVars(exprStr, data.Vars); err != nil {
-		return 0, err
+	if missing := missingVars(exprStr, data.Vars); len(missing) > 0 {
+		return 0, fmt.Errorf("variable %q not found", missing[0])
 	}
 	env := buildEnv(data)
 	program, err := expr.Compile(exprStr, expr.Env(env))
@@ -169,15 +170,16 @@ func buildEnv(data Data) evalEnv {
 	}
 }
 
-func ensureVars(expr string, vars map[string]int64) error {
+func missingVars(expr string, vars map[string]int64) []string {
 	matches := varRefPattern.FindAllStringSubmatch(expr, -1)
+	var missing []string
 	for _, m := range matches {
 		name := m[1]
 		if _, ok := vars[name]; !ok {
-			return fmt.Errorf("variable %q not found", name)
+			missing = append(missing, name)
 		}
 	}
-	return nil
+	return missing
 }
 
 func coerceNumber(v interface{}) (float64, error) {
